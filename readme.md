@@ -12,12 +12,12 @@ The challenge ranks our method’s results as the best in mean radial error (MRE
 
 ### Architecture
 
-![Architecture](./imgs/rcnn_diagram.pdf)
-![Architecture](./imgs/architecture_diagram.pdf)
+![Architecture](./imgs/rcnn_diagram.png)
+![Architecture](./imgs/architecture_diagram.png)
 
 
 ### Qualitative Results
-![Qualitative Results](./imgs/challenge_qualitative_figure.pdf)
+![Qualitative Results](./imgs/challenge_qualitative_figure.png)
 
 
 ### Code Structure
