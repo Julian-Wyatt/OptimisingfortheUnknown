@@ -1,0 +1,120 @@
+ARG PYTORCH="1.11.0"
+ARG CUDA="11.3"
+ARG CUDNN="8"
+
+
+# Pull the docker image | 拉取镜像
+FROM pytorch/pytorch:${PYTORCH}-cuda${CUDA}-cudnn${CUDNN}-devel
+
+# FROM pytorch/pytorch:1.11.0-cuda11.3-cudnn8-devel
+# FROM python:3.11.9-slim-bookworm
+
+# Set environment variables and compilation options | 设置环境变量和编译选项
+ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 7.5 8.0 8.6+PTX" \
+    TORCH_NVCC_FLAGS="-Xfatbin -compress-all" \
+    CMAKE_PREFIX_PATH="$(dirname $(which conda))/../" \
+    FORCE_CUDA="1"
+
+
+# Avoid Public GPG key error
+# https://github.com/NVIDIA/nvidia-docker/issues/1631
+RUN rm /etc/apt/sources.list.d/cuda.list \
+    && rm /etc/apt/sources.list.d/nvidia-ml.list \
+    && apt-key del 7fa2af80 \
+    && apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub \
+    && apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/x86_64/7fa2af80.pub
+
+
+# (Optional, use Mirror to speed up downloads) | 可选方案，利用阿里云镜像和清华源镜像加快下载速度
+RUN sed -i 's/http:\/\/archive.ubuntu.com\/ubuntu\//https:\/\/mirrors.aliyun.com\/ubuntu\//g' /etc/apt/sources.list && \
+    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+
+# Install the required packages | 更新系统中的软件包列表，下载一些必要的包，并且清理本地存储库中获取的软件包文件和临时文件，释放磁盘空间
+RUN apt-get update \
+    && apt-get install -y ffmpeg libsm6 libxext6 git ninja-build libglib2.0-0 libsm6 libxrender-dev libxext6 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# groupadd -r algorithm => 创建了一个名为 "algorithm" 的用户组
+# useradd -m --no-log-init -r -g algorithm algorithm => 创建了一个名为 "algorithm" 的用户，并将其添加到 "algorithm" 用户组中
+RUN groupadd -r algorithm && useradd -m --no-log-init -r -g algorithm algorithm
+RUN cat /etc/group
+
+
+# RUN mkdir .... => 创建了三个目录：/opt/algorithm、/input和/output。选项-p表示如果父级目录不存在，也会创建它们
+# chown algorithm:algorithm ... => 将创建的三个目录的所有者和组设置为algorithm，以确保这些目录的访问权限是正确的，并且与容器内运行的进程用户匹配
+RUN mkdir -p /opt/algorithm /input /output
+RUN mkdir -p /input/images/processed_images
+
+RUN chown -R algorithm:algorithm /opt/algorithm /input /output
+
+
+# 将当前Docker容器内的用户切换为 "algorithm" 用户，并切换到 /opt/algorithm 目录
+USER algorithm
+WORKDIR /opt/algorithm
+
+
+# 将环境变量 PATH 设置为 /home/algorithm/.local/bin 加上原先的 PATH 值。
+# 这样做的目的是将新的路径添加到现有的 PATH 变量中，以便在容器中执行命令时可以搜索到该路径下的可执行文件。
+ENV PATH="/home/algorithm/.local/bin:${PATH}"
+
+
+# RUN python -m pip install --user -U pip =>  仅在当前用户下使用 Python 自带的 pip 工具来安装或升级 pip 包管理器本身
+# python -m pip install --user pip-tools  =>  仅在当前用户下使用 pip 包管理器安装了 pip-tools 包
+RUN python -m pip install --user -U pip && python -m pip install --user pip-tools
+
+
+COPY --chown=algorithm:algorithm requirements_min.txt /opt/algorithm/requirements.txt
+
+RUN python -m pip install --user -r requirements.txt
+
+RUN pip install torch torchvision==0.16.2 lightning
+RUN pip install matplotlib numpy numba && \
+	pip install segmentation_models_pytorch torchinfo==1.8.0
+
+# Copy the Python scripts and model files
+COPY --chown=algorithm:algorithm core/process.py /opt/algorithm/core/process.py
+
+# RCNN Extractor
+COPY --chown=algorithm:algorithm core /opt/algorithm/core/
+
+# models and trainers
+COPY --chown=algorithm:algorithm trainers/__init__.py /opt/algorithm/trainers/
+COPY --chown=algorithm:algorithm trainers/CHH_reimplementation.py /opt/algorithm/trainers/
+COPY --chown=algorithm:algorithm trainers/test_ensemble.py /opt/algorithm/trainers/
+COPY --chown=algorithm:algorithm trainers/LandmarkDetection.py /opt/algorithm/trainers/
+COPY --chown=algorithm:algorithm trainers/mask_rcnn_localisation.py /opt/algorithm/trainers/
+COPY --chown=algorithm:algorithm trainers/detector.py /opt/algorithm/trainers/
+
+COPY --chown=algorithm:algorithm models/__init__.py /opt/algorithm/trainers/
+COPY --chown=algorithm:algorithm models/multi_scale_unet_new.py /opt/algorithm/models/
+COPY --chown=algorithm:algorithm models/multi_scale_unet.py /opt/algorithm/models/
+COPY --chown=algorithm:algorithm models/attention.py /opt/algorithm/models/
+COPY --chown=algorithm:algorithm models/denoising_unet.py /opt/algorithm/models/
+COPY --chown=algorithm:algorithm models/convnextv2.py /opt/algorithm/models/
+
+# dataset files
+COPY --chown=algorithm:algorithm dataset_utils /opt/algorithm/dataset_utils/
+
+# utils
+COPY --chown=algorithm:algorithm utils /opt/algorithm/utils/
+
+# model checkpoints
+COPY --chown=algorithm:algorithm checkpoints/RCNN/full_image_800x704.ckpt /opt/algorithm/checkpoints/RCNN/
+COPY --chown=algorithm:algorithm checkpoints/CustomUnet/ensemble_convnext_pretrained_encoder_unet.ckpt /opt/algorithm/checkpoints/ensemble.ckpt
+
+
+# Copy the configuration files
+COPY --chown=algorithm:algorithm ./configs/docker_configs/rcnn_full_images.yaml /opt/algorithm/configs/docker_configs/rcnn_full_images.yaml
+COPY --chown=algorithm:algorithm ./configs/docker_configs/next_ensemble.yaml /opt/algorithm/configs/main_config.yaml
+
+
+# Generate RCNN images & run predictions
+COPY --chown=algorithm:algorithm DockerData/run.sh /opt/algorithm/run.sh
+RUN chmod +x run.sh
+
+
+# Set the entry point to run the process script | 设置入口点以运行process脚本
+ENTRYPOINT ./run.sh

@@ -1,0 +1,59 @@
+DATASET:
+  ROOT_DIR: "xray-cephalometric-land/xray-cephalometric-miccai24-land"
+  CACHE_DIR: "./"
+  NAME: "Ceph-Xray-Challenge"
+  IMG_EXT: ".bmp"
+  IMG_DIRS:
+    - "Training Set/images"
+    - "Validation Set/images"
+  #  LABEL_DIR: "Training Set/labels.csv"
+  LABEL_DIR: "Training Set/labels_with_val_estimates.csv"
+  #  PARTITION_FILE: "partitions/training_challenge_partition_fulltrain_val_as_val_and_test.json"
+  #  PARTITION_FILE: "partitions/training_challenge_partition.json"
+  #  PARTITION_FILE: "partitions/training_challenge_partition_fulltrain_val.json"
+  #  PARTITION_FILE: "partitions/training_challenge_partition_with_val.json"
+  PARTITION_FILE: "partitions/CrossVal/partition_0.json"
+  NUMBER_KEY_POINTS: 53
+  #  SCALE_COORDINATES: False
+  CHANNELS: 1
+  #  PIXELS_PER_MM: [0.1,0.1]
+  #  IMG_SIZE: [ 640, 512 ]
+  IMG_SIZE: [ 800, 704 ]
+#  LANDMARK_POINT_EPSILON: 1
+#  LOG_DDH_METRICS: False
+#  USE_MULTI_ANNOTATION: -1
+#  AUGMENT_TRAIN: True
+#  CHALLENGE_PREPROCESSING: True
+#  #  PROCESSED_IMGS_DIR: "736x672-15l3d6td"
+#  GT_SIGMA: 1
+#  USE_GAUSSIAN_GT: True
+#  #  PROCESSED_IMGS_DIR: "640x512-ep7mbbs6" # lower res - New dataset
+#  PROCESSED_IMGS_DIR: "800x704-tr9i1vaj" # high res - New dataset
+
+
+
+TRAIN:
+  MODEL_TYPE: "CHH"
+  BATCH_SIZE: 1
+  WEIGHT_DECAY: 0.00001
+  BETA1: 0.9
+  BETA2: 0.999
+  LR: 0.001
+  EPOCHS: 45
+  LOG_VIDEO: False
+  LOG_IMAGE: True
+  LOG_INTERVAL: 1
+  USE_SCHEDULER: False
+  RUN_TEST: True
+  VAL_EVERY_N_EPOCHS: 1
+  LOG_WHOLE_VAL: True
+  TOP_K_HOTTEST_POINTS: 10
+  LOG_TEST_METRICS: False
+  optimizer: "adamw"
+
+
+DENOISE_MODEL:
+  DECODER_CHANNELS: [ 256, 256, 256, 128, 64 ]
+  USE_PRETRAINED_IMAGENET_WEIGHTS: True
+  DROPOUT: 0.2
+

@@ -1,0 +1,141 @@
+DATASET:
+  ROOT_DIR: "xray-cephalometric-land/xray-cephalometric-miccai24-land"
+  CACHE_DIR: "./"
+  NAME: "Ceph-Xray-Challenge"
+  IMG_EXT: ".bmp"
+  IMG_DIRS:
+    - "Training Set/images"
+    - "Validation Set/images"
+#  LABEL_DIR: "Training Set/labels.csv"
+  LABEL_DIR: "Training Set/labels_with_val_estimates.csv"
+#  PARTITION_FILE: "partitions/training_challenge_partition_fulltrain_val_as_val_and_test.json"
+#  PARTITION_FILE: "partitions/training_challenge_partition.json"
+#  PARTITION_FILE: "partitions/training_challenge_partition_fulltrain_val.json"
+#  PARTITION_FILE: "partitions/training_challenge_partition_with_val.json"
+  PARTITION_FILE: "partitions/CrossVal/partition_0.json"
+  NUMBER_KEY_POINTS: 53
+  SCALE_COORDINATES: False
+  CHANNELS: 1
+#  PIXELS_PER_MM: [0.1,0.1]
+  IMG_SIZE: [ 800, 704]
+  LANDMARK_POINT_EPSILON: 1
+  LOG_DDH_METRICS: False
+  USE_MULTI_ANNOTATION: 2
+  AUGMENT_TRAIN: True
+  CHALLENGE_PREPROCESSING: True
+#  PROCESSED_IMGS_DIR: "736x672-15l3d6td"
+#  PROCESSED_IMGS_DIR: "768x704-fqisncz0" # higher res
+#  PROCESSED_IMGS_DIR: "736x672-5txaqeu1" # lower res
+#  PROCESSED_IMGS_DIR: "640x512-ep7mbbs6" # lower res - New dataset
+  PROCESSED_IMGS_DIR: "800x704-tr9i1vaj" # high res - New dataset
+  GT_SIGMA: 1
+  USE_GAUSSIAN_GT: True
+  USE_ALL_RCNN_IMAGES: False
+
+
+
+#AUGMENTATIONS:
+#  FLIP_INITIAL_COORDINATES: False
+#  ROTATION: 15
+#  SCALE: 0.075
+#  TRANSLATION_X: [ -30,30 ]
+#  TRANSLATION_Y: [ -15,15 ]
+#  MULTIPLY: 0.5
+#  ELASTIC_TRANSFORM_ALPHA: 500
+#  ELASTIC_TRANSFORM_SIGMA: 30
+#  CUTOUT_ITERATIONS: 1
+#  SHEAR: 0
+
+#AUGMENTATION SWEEP:
+AUGMENTATIONS:
+  INVERT_RATE: 0.1 # between 0 and 0.15 is best
+  BLUR_RATE: 0.1 # between 0 and 0.2 is best
+  ROTATION: 5 # between 0 and 8 is best
+  SCALE: 0.125 # 1.25 far best which was top of sweep so trying 1.5
+  SHEAR: 0 # Fairly no correlation but around 5 gives decent results
+  TRANSLATION_X: [ -30, 30 ] # between 20 and 30 is best
+  TRANSLATION_Y: [ -20, 20 ] # lowerbound between [-20,-25] is best Upper bound between 20 and 30
+  MULTIPLY: 0.6 # Fairly no correlation - about 0.45 is peak but best result at 0.65
+  CUTOUT_ITERATIONS: 1 # 1 for higher sizes or 2 for smaller sizes is best
+  CUTOUT_SIZE_MIN: 0.04 # 0.07-0.1 is best
+  CUTOUT_SIZE_MAX: 0.3 # 0.25-0.3 is best
+  GAUSSIAN_NOISE: 0 # 0 is best
+  USE_SKEWED_SCALE_RATE: 0.3 # 0.25 is best although little correlation
+  CONTRAST_GAMMA_MIN: 0.3 # 0.3 is best roughly - lower values are better
+  CONTRAST_GAMMA_MAX: 2 # 2.0 is best roughly - 2-2.2 values are better
+  SIMULATE_XRAY_ARTEFACTS_RATE: 0.9 # 0.7-0.9 is best
+  ELASTIC_TRANSFORM_ALPHA: 400
+  ELASTIC_TRANSFORM_SIGMA: 30
+
+
+
+DIFFUSION:
+  L_SIMPLE_WEIGHT: 0.4
+  NLL_WEIGHT: 0.4
+  BCE_WEIGHT: 0
+  ADV_USE_UPSCALED_HEATMAP: False
+  ADV_SCALE_LOSSES_BY_RESOLUTION: False
+  ADV_USE_NEGATIVE_LEARNING: False
+
+
+
+TRAIN:
+  MODEL_TYPE: "main"
+  BATCH_SIZE: 1
+#  WEIGHT_DECAY: 0.00001
+  WEIGHT_DECAY: 0.05
+  BETA1: 0.9
+  BETA2: 0.999
+  LR: 0.0002
+#  LR: 0.001
+  EPOCHS: 75
+  LOG_VIDEO: False
+  LOG_IMAGE: True
+  LOG_INTERVAL: 40
+  USE_SCHEDULER: "multistep"
+  RUN_TRAIN: False
+  RUN_TEST: True
+  LOG_WHOLE_VAL: True
+  VAL_EVERY_N_EPOCHS: 2
+  LOG_TEST_METRICS: False
+  NUM_WORKERS: 2
+  WARMUP_EPOCHS: 25
+  MIN_LR: 0.000001
+  OPTIMISER: "adamw"
+  EXP_LR_DECAY: 0.91
+  TOP_K_HOTTEST_POINTS: 20
+  # v0 highest mre
+#  ENSEMBLE_MODEL_PATHS:
+#    - "94vu3tpf/last.ckpt" # partition 0
+#    - "sbdtm28b/last.ckpt" # partition 1
+#    - "087oq2wd/last.ckpt" # partition 2
+#    - "7pn1b0tx/last.ckpt" # partition 3
+#  v1 lowest mre
+  ENSEMBLE_MODEL_PATHS:
+    - "ya2137at/last-v1.ckpt" # partition 0
+    - "f291xbgw/last-v1.ckpt" # partition 1
+    - "3otf5cq4/last-v1.ckpt" # partition 2
+    - "g3housyf/last-v1.ckpt" # partition 3
+#   v2 second lowest mre
+#  ENSEMBLE_MODEL_PATHS:
+#    - "dypqk9i9/last.ckpt" # partition 0
+#    - "y3awmebv/last.ckpt" # partition 1
+#    - "o9m6rmfd/last.ckpt" # partition 2
+#    - "o3qce1g2/last.ckpt" # partition 3
+  ENSEMBLE_STRATEGY: "all"
+
+
+DENOISE_MODEL:
+  USE_NEW_MODEL: "ConvNeXtUNet"
+  NAME: "nano"
+
+  USE_PRETRAINED_IMAGENET_WEIGHTS: False
+  CONVNEXT_CH_MULT: 2
+
+  DROPOUT: 0.2
+  DROP_PATH_RATE: 0.35
+  GRAYSCALE_TO_RGB: "weighted_sum"
+
+  SEGFORMER_DECODER_CH_MULT: 3
+  DECODER_CHANNELS: [128]
+

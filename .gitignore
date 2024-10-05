@@ -1,0 +1,11 @@
+wandb
+.idea
+.env
+datasets
+*.mp4
+tmp
+del
+.vscode
+__pycache__
+.DS_Store
+submissions

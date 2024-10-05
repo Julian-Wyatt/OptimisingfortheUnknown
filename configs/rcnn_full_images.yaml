@@ -1,0 +1,21 @@
+DATASET:
+  ROOT_DIR: "xray-cephalometric-land/xray-cephalometric-miccai24-land"
+  CACHE_DIR: "./"
+  NAME: "Ceph-Xray-Challenge"
+  IMG_EXT: ".bmp"
+  NUMBER_KEY_POINTS: 53
+  CHANNELS: 1
+  IMG_SIZE: [ 800, 704 ] # full image
+  #  IMG_SIZE: [ 704, 640 ] # sub images
+  USE_MULTI_ANNOTATION: 2
+  AUGMENT_TRAIN: True
+  CHALLENGE_PREPROCESSING: True
+  BOUNDING_BOX_EPS: 30
+  SAVE_RCNN_IMAGES: True
+  USE_ALL_RCNN_IMAGES: False
+
+
+TRAIN:
+  BATCH_SIZE: 1
+  MODEL_TYPE: "RCNN"
+  CHECKPOINT_PATH: "./checkpoints/RCNN/full_image_800x704.ckpt"
