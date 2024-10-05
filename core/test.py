@@ -3,7 +3,6 @@ import os
 
 from trainers.CHH_reimplementation import CHH
 from trainers.detector import RandomLandmarkDetector
-from trainers.baseline import Baseline
 from dataset_utils.dataset import LandmarkDataset
 
 os.environ["WANDB__SERVICE_WAIT"] = "240"
@@ -13,7 +12,6 @@ from lightning.pytorch.loggers import WandbLogger
 import lightning as L
 from utils import util
 from core import config
-from trainers import diffusion
 
 
 def parse_args():
@@ -60,22 +58,8 @@ def main():
     logger.log_hyperparams(args)
     logger.log_hyperparams(cfg.to_dict())
 
-    if cfg.TRAIN.MODEL_TYPE == "DDPM":
-        logger.experiment.save("./trainers/diffusion.py")
-        logger.experiment.save("./models/denoising_unet.py")
-        model = diffusion.DDPM.load_from_checkpoint(
-            f"{args.saving_root_dir}/tmp/checkpoints/{cfg.DATASET.NAME}-{cfg.TRAIN.MODEL_TYPE}-{cfg.TRAIN.CHECKPOINT_FILE}",
-            cfg=cfg)
-    elif cfg.TRAIN.MODEL_TYPE == "Baseline":
-        logger.experiment.save("./trainers/baseline.py")
-        logger.experiment.save("./models/denoising_unet.py")
-        model = Baseline.load_from_checkpoint(
-            f"{args.saving_root_dir}/tmp/checkpoints/{cfg.DATASET.NAME}-{cfg.TRAIN.MODEL_TYPE}-{cfg.TRAIN.CHECKPOINT_FILE}",
-            cfg=cfg)
-    elif cfg.TRAIN.MODEL_TYPE.lower() == "main":
+    if cfg.TRAIN.MODEL_TYPE.lower() == "main":
         logger.experiment.save("./trainers/detector.py")
-        logger.experiment.save("./models/multi_scale_unet_new.py")
-        logger.experiment.save("./trainers/multi_image_landmark_detection.py")
         model = RandomLandmarkDetector.load_from_checkpoint(
             f"{args.saving_root_dir}/tmp/checkpoints/{cfg.DATASET.NAME}-{cfg.TRAIN.MODEL_TYPE}-{cfg.TRAIN.CHECKPOINT_FILE}",
             cfg=cfg)

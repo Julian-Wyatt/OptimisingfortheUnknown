@@ -73,13 +73,6 @@ class LandmarkDataset(Dataset):
         self.metas = []
 
         # perform augmentation
-        self.VARY_GT_W_DIFFUSION = cfg.DIFFUSION.VARY_GT_W_DIFFUSION
-        self.USE_MULTI_SCALE = cfg.DENOISE_MODEL.USE_MULTI_SCALE
-        self.num_scales = len(cfg.DENOISE_MODEL.ENCODER_CHANNELS)
-        self.USE_NEGATIVE_LEARNING = cfg.DIFFUSION.ADV_USE_NEGATIVE_LEARNING
-        self.Diffusion_T = cfg.DIFFUSION.DIFFUSION_STEPS
-        self.use_multi_annotation = cfg.DATASET.USE_MULTI_ANNOTATION
-        self.NEGATIVE_LEARNING_MAX_RADIUS = cfg.DATASET.NEGATIVE_LEARNING_MAX_RADIUS
         self.augment = augment
 
         self.preprocess = LandmarkPreprocessing(cfg)
@@ -125,10 +118,6 @@ class LandmarkDataset(Dataset):
         ], random_order=False)
 
         self.invert_transform = iaa.Invert(cfg.AUGMENTATIONS.INVERT_RATE)
-        # self.invert_transform = iaa.Invert(0.9)
-        # self.invert_transform = iaa.Invert(0.9, threshold=20)
-        # self.Contrasts = [iaa.GammaContrast((0.5, 2)), iaa.LinearContrast((0.5, 1.4)),
-        #                   iaa.SigmoidContrast(gain=(3, 10), cutoff=(0.5, 0.7))]
 
         self.coarse_dropout = iaa.CoarseDropout(0.02, size_percent=0.08)
         self.addative_gaussian_noise = iaa.AdditiveGaussianNoise(scale=(0, cfg.AUGMENTATIONS.GAUSSIAN_NOISE * 255))
@@ -137,9 +126,6 @@ class LandmarkDataset(Dataset):
 
         self.FLIP_INITIAL_COORDINATES = cfg.AUGMENTATIONS.FLIP_INITIAL_COORDINATES
         self.LANDMARK_POINT_EPSILON = cfg.DATASET.LANDMARK_POINT_EPSILON
-        self.LOCALISED_LOSS = cfg.DIFFUSION.LOCALISED_LOSS
-        self.USE_OFFSETS = cfg.DIFFUSION.USE_OFFSETS
-        self.RADIUS = cfg.DIFFUSION.MASK_RADIUS
 
         self.cfg_INT_TO_FLOAT = cfg.DATASET.INT_TO_FLOAT
         self.cfg_NORMALISATION_METHOD = cfg.DATASET.NORMALISATION
@@ -172,14 +158,6 @@ class LandmarkDataset(Dataset):
                 iaa.Resize({"height": cfg.DATASET.IMG_SIZE[0], "width": cfg.DATASET.IMG_SIZE[1]})
             ])
 
-        # eye, spine, chin, eye, full
-        self.label_to_indices = [[0, 3, 16, 18, 23, 24, 26, 27, 28],
-                                 [38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
-                                 [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 25, 29, 30, 31, 32,
-                                  35, 36, 37],
-                                 [1, 2, 33, 34, 51, 52]]
-
-        self.class_weighted_sampling_weights = multiprocessing.Array('f', [0.25, 0.25, 0.25, 0.25, 0])
 
     def __len__(self):
         return len(self.data)
@@ -374,13 +352,11 @@ class LandmarkDataset(Dataset):
         # load data
         if self.store_in_ram and label not in self.ram[idx]:
             img = cv2.imread(image_name, cv2.IMREAD_GRAYSCALE)
-            # img = io.imread(image_name, as_gray=True)
             self.ram[idx][label] = img
         elif self.store_in_ram:
             img = self.ram[idx][label]
         else:
             img = cv2.imread(image_name, cv2.IMREAD_GRAYSCALE)
-            # img = io.imread(image_name, as_gray=True)
 
         img = img.astype(np.uint8)
         landmarks_all_annotators = np.loadtxt(annotations[0], delimiter=",", max_rows=total_landmarks)
@@ -396,7 +372,6 @@ class LandmarkDataset(Dataset):
         if self.augment:
 
             img_aug_colour = self.invert_transform(image=img)
-            # img_aug_colour = colour_augmentation(img_aug_colour)
             if random.random() < self.SIMULATE_XRAY_ARTEFACTS_RATE:
                 img_aug_colour = simulate_x_ray_artefacts(img_aug_colour)
 
@@ -419,27 +394,10 @@ class LandmarkDataset(Dataset):
                         # plt.title("outside augs")
                         # plt.show()
                         img_aug, kps_aug = self.low_transform(image=img_aug_colour, keypoints=kps)
-                        # plt.imshow(img_aug)
-                        # plt.scatter(kps_aug.to_xy_array()[:, 0], kps_aug.to_xy_array()[:, 1], c='r', s=2)
-                        # plt.title("low augs")
-                        # plt.show()
                         break
                     continue
                 else:
                     break
-
-            # random_1, random_2, random_3 = random.random(), random.random(), random.random()
-            # random_1, random_2 = random.random(), random.random()
-            # if random_1 < self.coarse_dropout_rate:
-            #     img_aug = self.coarse_dropout(image=img_aug)
-            # if random_2 < self.addative_gaussian_noise_rate:
-            #     img_aug = self.addative_gaussian_noise(image=img_aug)
-
-            # norm_val = random.choices([0, 1, 2], weights=[0.2, 0.2, 0.6])[0]
-            # if norm_val == 0:
-            #     img_aug = skimage.exposure.equalize_adapthist(img_aug)
-            # elif norm_val == 1:
-            #     img_aug = self.img_int_to_float(img_aug)
 
             img, kps = img_aug, kps_aug
 
@@ -502,47 +460,6 @@ class LandmarkDataset(Dataset):
         return dataloader
 
 
-def collate_fn(batch):
-    x = torch.stack([item for item, label in batch])
-    labels = torch.cat([torch.Tensor([label]) for item, label in batch])
-    return {"x": x, "y": x, "labels": labels}
-
-
-def mnist_loader(batch_size, num_workers):
-    mnist_data = torchvision.datasets.MNIST('./datasets/mnist', train=True, download=True,
-                                            transform=torchvision.transforms.Compose([
-                                                torchvision.transforms.Resize((32, 32)),
-                                                torchvision.transforms.ToTensor(),
-                                                torchvision.transforms.Normalize((0.5,), (0.5,))
-                                            ]))
-    mnist_data = torch.utils.data.Subset(mnist_data, list(range(500)))
-    mnist_testing_data = torchvision.datasets.MNIST('./datasets/mnist', train=False, download=True,
-                                                    transform=torchvision.transforms.Compose([
-                                                        torchvision.transforms.Resize((32, 32)),
-                                                        torchvision.transforms.ToTensor(),
-                                                        torchvision.transforms.Normalize((0.5,), (0.5,))
-                                                    ]))
-    mnist_val_data = torch.utils.data.Subset(mnist_testing_data, list(range(100)))
-    mnist_test_data = torch.utils.data.Subset(mnist_testing_data, list(range(100, 175)))
-    train_dataloader = torch.utils.data.DataLoader(mnist_data,
-                                                   batch_size=batch_size,
-                                                   shuffle=True,
-                                                   num_workers=num_workers,
-                                                   collate_fn=collate_fn)
-    val_dataloader = torch.utils.data.DataLoader(mnist_val_data,
-                                                 batch_size=batch_size * 2,
-                                                 shuffle=False,
-                                                 num_workers=num_workers,
-                                                 collate_fn=collate_fn)
-    test_dataloader = torch.utils.data.DataLoader(mnist_test_data,
-                                                  batch_size=batch_size * 2,
-                                                  shuffle=False,
-                                                  num_workers=num_workers,
-                                                  collate_fn=collate_fn)
-
-    return train_dataloader, val_dataloader, test_dataloader
-
-
 def main():
     plt.rcParams["figure.figsize"] = (12, 12)
     plt.rcParams["image.cmap"] = "gray"
@@ -550,21 +467,15 @@ def main():
 
     cfg = config.get_config("configs/local_test_ceph_challenge.yaml")
 
-    # cfg.DATASET.PROCESSED_IMGS_DIR = "704x640-n67pwrxu"
-    # cfg.DATASET.PROCESSED_IMGS_DIR = "800x704-tr9i1vaj"
+
     cfg.DATASET.PROCESSED_IMGS_DIR = "800x704-54pbdf90"
     # cfg.DATASET.PROCESSED_IMGS_DIR = "deterministic_challenge_preprocessing"
-    cfg.DATASET.STANDARDISE_SIZES = True
-    cfg.DATASET.IMG_SIZE = [128, 115]
     # cfg.DATASET.PROCESSED_IMGS_DIR = ""
     cfg.DATASET.CHALLENGE_PREPROCESSING = False
     cfg.DATASET.USE_ALL_RCNN_IMAGES = False
     cfg.DATASET.USE_GAUSSIAN_GT = True
     cfg.DATASET.GT_SIGMA = 1
-    # cfg.DATASET.STANDARDISE_SIZES = True
-    # cfg.AUGMENTATIONS.ELASTIC_TRANSFORM_ALPHA = 170
-    # cfg.AUGMENTATIONS.ELASTIC_TRANSFORM_SIGMA = 45
-    # cfg.DATASET.IMG_SIZE = [736, 672]
+
     train_loader = LandmarkDataset.get_loaders(cfg, 1, 0, False, partition="training", shuffle=True)
     # train_loader = LandmarkDataset.get_loaders(cfg, 1, 1, False, partition="validation", shuffle=False)
     # train_loader = LandmarkDataset.get_loaders(cfg, 1, 1, False, partition="testing", shuffle=True)
@@ -572,136 +483,19 @@ def main():
 
     ia.seed(np.random.randint(0, 1000))
     for b, batch in enumerate(train_loader):
-        # for key in batch:
-        #     print(key, type(batch[key]))
-        #     if isinstance(batch[key], torch.Tensor):
-        #         print(key, batch[key].shape, batch[key].dtype)
-        #     elif isinstance(batch[key], list):
-        #         print(key, len(batch[key]), type(batch[key][0]))
-        #         if isinstance(batch[key][0], torch.Tensor):
-        #             print(key, batch[key][0].shape, batch[key][0].dtype)
-        # print(key, batch[key].shape, batch[key].dtype)
 
-        # label = str(random.randint(0, 3))
-        label = ""
+        x = rearrange(batch["x"], 'b h w c -> b c h w')
 
-        x = rearrange(batch["x" + label], 'b h w c -> b c h w')
-        # print(x.min(), x.max(), x.float().mean(), x.float().std(), x.dtype, batch['name'])
         if batch["name"][0] == "454":
             plt.imshow((renormalise(x[0, 0], True)).clamp(0, 255).long().cpu().numpy())
-            plt.scatter(batch["y" + label][0, :, 1], batch["y" + label][0, :, 0], c='r', s=2)
+            plt.scatter(batch["y"][0, :, 1], batch["y"][0, :, 0], c='r', s=2)
             plt.title(f"Image {batch['name'][0]}")
             plt.show()
 
-            plt.imshow(reduce(batch["y_img" + label][0], "c h w -> h w", "max").cpu().numpy())
+            plt.imshow(reduce(batch["y_img"][0], "c h w -> h w", "max").cpu().numpy())
             # plt.scatter(batch["y" + label][0, :, 1], batch["y" + label][0, :, 0], c='r', s=2)
             plt.title(f"Image {batch['name'][0]}")
             plt.show()
-        # if b > 3:
-        #     break
-        # new_weights = [1, 0, 0, 0, 0]
-        # for i in range(4):
-        #     train_loader.dataset.class_weighted_sampling_weights[i] = new_weights[i]
-
-        # label_to_indices = [[0, 3, 16, 18, 23, 24, 26, 27, 28],
-        #                     [9, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
-        #                     [4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 25, 29, 30, 31, 32, 35,
-        #                      36, 37],
-        #                     [1, 2, 33, 34, 51, 52]]
-        #
-        # final_coordinates = torch.zeros((batch["y"].shape[0], 53, 2),
-        #                                 device='cpu')
-        #
-        # for i in range(len(label_to_indices) - 2):
-        #     label_indices = label_to_indices[i]
-        #
-        #     sub_image = rearrange(batch[f"x{i}"], 'b h w c -> b c h w')
-        #
-        #     # sub_landmark_gt = batch[f"y{i}"]
-        #     # sub_landmark_image_gt = batch[f"y_img{i}"]
-        #     # prediction = self(sub_image, torch.tensor(i).to(self.device))
-        #     # prediction = two_d_softmax(prediction)
-        #     coordinate_prediction = get_coordinates_from_heatmap(batch[f"y_img{i}"], k=1)
-        #     print(batch[f"y{i}"][0, :5])
-        #     print(coordinate_prediction[0, :5], batch["scale_factor" + str(i)], batch["shift" + str(i)])
-        #     coordinate_prediction[:] = coordinate_prediction[:] * batch["scale_factor" + str(i)].flip(-1)
-        #     coordinate_prediction[0, :, 0] += batch["shift" + str(i)][0, 0]
-        #     coordinate_prediction[0, :, 1] += batch["shift" + str(i)][0, 1]
-        #
-        #     final_coordinates[:, label_indices] += coordinate_prediction
-        # final_coordinates[:, 16] /= 2
-        # print(final_coordinates[0, :5], batch["name"])
-
-        # label_to_indices = [[0, 3, 16, 18, 23, 24, 26, 27, 28],
-        #                     [9, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
-        #                     [4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 25, 29, 30, 31, 32, 35,
-        #                      36, 37],
-        #                     [1, 2, 33, 34, 51, 52]]
-        #
-        # landmarks = batch["y" + label].clone().flip(-1)
-        # landmarks[:] = landmarks[:] * batch["scale_factor" + label]
-        # landmarks[0, :, 0] += batch["shift" + label][0, 0]
-        # landmarks[0, :, 1] += batch["shift" + label][0, 1]
-        #
-        # print("inverted", landmarks[0, :], batch["y"][0, label_to_indices[int(label)]])
-
-        # print(x.dtype, x.shape, batch["y" + label].dtype, batch["y" + label].shape)
-        # if torch.any(batch["y"] < 0) or torch.any(batch["y"][:, 0] > x.shape[2]) or torch.any(
-        #         batch["y"][:, 1] > x.shape[3]):
-        #     print("Landmark out of bounds")
-        #     plt.imshow(x[0, 0].cpu().numpy())
-        #
-        #     boxed_landmarks = torch.round(batch["y"]).to(torch.int)
-        #     plt.scatter(boxed_landmarks[0, :, 0], boxed_landmarks[0, :, 1], c='r', s=2)
-        #     for landmark_i, (coordinate_x, coordinate_y) in enumerate(boxed_landmarks[0]):
-        #         plt.text(coordinate_x, coordinate_y, str(landmark_i), color='red', fontsize=8)
-        #     plt.title(f"Image {batch['name'][0]}")
-        #     plt.show()
-        #     continue
-
-        # if b >= 12:
-        #     break
-        # print(x.shape, batch["x"].shape, batch["scale_factor"])
-        #
-        # lap_pyramid_input = lap_pyramid(x, max_depth=4)
-        # x = torch.cat([x, lap_pyramid_input.pop(0)], dim=1)
-        # # x = drop_channel_but_not_both(x, drop_prob=0.9)
-        # plt.imshow(x[0, 0].cpu().numpy())
-        # plt.title(f"x {i}")
-        # # plt.show()
-        # plt.imshow(x[0, 0].cpu().numpy())
-        # plt.scatter(batch["y" + label][0, :, 1], batch["y" + label][0, :, 0], c='r', s=2)
-        # for i in range(batch["y" + label].shape[1]):
-        #     plt.text(batch["y" + label][0, i, 1], batch["y" + label][0, i, 0], str(i), color='red', fontsize=8)
-        # plt.title(f"lap {i}")
-        # plt.show()
-        # plt.imshow(batch["y_img" + label][0, 0].cpu().numpy())
-        # plt.show()
-        # img = plot_landmarks_from_img(renormalise(x), landmarks=batch["y_img_initial"],
-        #                               true_landmark=batch["y_img_initial"]).permute(0, 2, 3, 1).int()
-        # plt.imshow(img.cpu().numpy()[0])
-        # plt.title(f"{batch['name'][0]}")
-        # plt.show()
-        # for label in range(4):
-        #     label = str(label)
-        #     x = rearrange(batch["x" + str(label)], 'b h w c -> b c h w')
-        #     print(x.min(), x.max())
-        #     plotted_imgs = plot_landmarks_from_img(renormalise(x), batch["y_img" + label], )
-        #
-        #     plt.imshow(plotted_imgs[0].permute(1, 2, 0).cpu().long().numpy())
-        #     plt.scatter(batch["y" + label][0, :, 1], batch["y" + label][0, :, 0], c='r', s=2)
-        #     plt.title(f"Image {batch['name'][0]}")
-        #     plt.show()
-        # plt.imshow(renormalise(x[0, 0]).cpu().numpy())
-        # plt.scatter(batch["y" + label][0, :, 1], batch["y" + label][0, :, 0], c='r', s=2)
-        # plt.title(f"Image {batch['name'][0]}")
-        # plt.show()
-        # plt.imshow(batch["y_img" + label][0, 0].cpu().numpy())
-        # plt.title(f"Image {batch['name'][0]}")
-        # plt.show()
-        # example = plot_landmarks_from_img(x, batch["y_img" + label], batch["y_img" + label])
-        # plt.imshow(example[0].permute(1, 2, 0).cpu().numpy())
-        # plt.show()
 
     print(time.time() - start)
 

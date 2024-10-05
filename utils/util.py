@@ -76,23 +76,6 @@ def avg_pool_nd(dims, *args, **kwargs):
     raise ValueError(f"unsupported dimensions: {dims}")
 
 
-class GRN(nn.Module):
-    """
-    CONVNEXT V2
-    GRN (Global Response Normalization) layer
-    """
-
-    def __init__(self, dim):
-        super().__init__()
-        self.gamma = nn.Parameter(torch.zeros(1, 1, 1, dim))
-        self.beta = nn.Parameter(torch.zeros(1, 1, 1, dim))
-
-    def forward(self, x):
-        Gx = torch.norm(x, p=2, dim=(1, 2), keepdim=True)
-        Nx = Gx / (Gx.mean(dim=-1, keepdim=True) + 1e-6)
-        return self.gamma * (x * Nx) + self.beta + x
-
-
 class LayerNorm(nn.Module):
     """
     CONVNEXT V2
@@ -297,17 +280,6 @@ class noProgressBar(noVal_testProgressBar):
         return bar
 
 
-def plot_variance_schedule(timesteps=1000):
-    import matplotlib.pyplot as plt
-    t = np.array(range(timesteps)) / timesteps
-    for variance in ["linear", "cosine", "sqrt_linear", "sqrt"]:
-        betas = make_beta_schedule(variance, timesteps)
-        alphas = 1 - betas
-        alpha_bar = np.cumprod(alphas)
-        plt.plot(alpha_bar, t, label=variance)
-    plt.legend()
-    plt.title(f"Variance Schedule - t={timesteps}")
-    plt.show()
 
 
 def save_to_csv(saving_root_dir, id, coordinates_all_batch, batch, total_landmarks):
@@ -324,8 +296,3 @@ def save_to_csv(saving_root_dir, id, coordinates_all_batch, batch, total_landmar
             output = [f"{int(batch['name'][i]):03d}.bmp"] + [str(i) for i in
                                                              coordinates.flatten().tolist()]
             f.write(",".join(output) + "\n")
-
-
-if __name__ == "__main__":
-    for timestep in [10, 50, 100, 500, 1000]:
-        plot_variance_schedule(timestep)

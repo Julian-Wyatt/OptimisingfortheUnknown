@@ -49,11 +49,8 @@ class Dataset(SubConfig):
 
         # Training-related attributes
         self.AUGMENT_TRAIN = True
-        self.LOG_DDH_METRICS = False
 
         self.CHALLENGE_PREPROCESSING = False
-
-        self.NEGATIVE_LEARNING_MAX_RADIUS = 6
 
         self.BOUNDING_BOX_EPS = 15
 
@@ -109,7 +106,6 @@ class DenoiseModel(SubConfig):
         # should remain 2 for 2D coordinates
         self.USE_MULTI_SCALE = False  # multi scale training
         self.USE_NEW_MODEL = False
-        self.USE_LAP_PYRAMID = False
         self.CONVNEXT_CH_MULT = 4
         self.DROPOUT = 0.1
         self.NUM_RES_BLOCKS = 2
@@ -128,76 +124,45 @@ class DenoiseModel(SubConfig):
         super().__init__(**entries)
 
 
-class ClassifierModel(SubConfig):
-    # timestep unet encoder with attention to predict class
-    def __init__(self, **entries):
-        self.NAME = "Image encoder classifier"
-        # should remain 2 for 2D coordinates
-        self.DROPOUT = 0.1
-        self.NUM_RES_BLOCKS = 2
-        self.CONTEXT_DIM = None
-        self.ENCODER_CHANNELS = (32, 32, 64, 128, 256)
-        self.ATTN_RESOLUTIONS = (8,)
-        self.NUM_HEADS = 2
-        self.NUM_CLASSES = 2
-        # ["adaptive", "attention", "spatial", "spatial_v2"]
-        self.FINAL_POOL = "adaptive"
-        self.DOWN_SAMPLE_CONTEXT = False
-        super().__init__(**entries)
 
 
-class Diffusion(SubConfig):
-    def __init__(self, **entries):
-        self.BETA_SCHEDULE = "sqrt_linear"  # ["linear", "cosine", "sqrt_linear", "sqrt"]
-        self.BETA_START = 1e-4
-        self.BETA_END = 2e-2
-        self.DIFFUSION_STEPS = 100
-        self.LEARN_LOGVAR = False
-        self.PARAMETERISATION = "eps"  # ["eps", "x0"]
-        self.LOG_EVERY_t = 10
-        self.USE_EMBEDDING = True
-        self.CLASSIFIER_SCALE = 1
-        self.CLASSIFIER_CHECKPOINT_FILE = ""
-        self.COORDINATE_LOSS_WEIGHT = 0
-        self.L_SIMPLE_WEIGHT = 1
-        self.ORIGINAL_ELBO_WEIGHT = 0
-        self.NLL_WEIGHT = 0
-        self.OFFSET_LOSS_WEIGHT = 0
-        self.BCE_WEIGHT = 0
-
-        self.MAX_BLUR_STD = 10
-        self.BLUR_KERNEL_SIZE = 5
-
-        self.VARY_GT_W_DIFFUSION = False
-        self.RANDOM_VALIDATION = False
-
-        self.MASK_RADIUS = 0
-        self.USE_OFFSETS = False
-        self.LOCALISED_LOSS = False
-
-        self.GEN_BIG_T_HEATMAP = False
-
-        self.ADV_SCALE_LOSSES_BY_RESOLUTION = False
-        self.ADV_USE_UPSCALED_HEATMAP = False
-        self.ADV_USE_NEGATIVE_LEARNING = False
-        self.ADV_TRAIN_MULTI_OBJECTIVE = False
-
-        super().__init__(**entries)
-
-
-# class ImageEncoder:
+# class Diffusion(SubConfig):
 #     def __init__(self, **entries):
-#         self.NAME = "ImageEncoder"
-#         self.EMBEDDING_DIM = 1
-#         self.NUM_EMBEDDINGS = 128
-#         self.BETA = 0
-#         self.KLD_WEIGHT = 0
-#         self.HIDDEN_DIM = [64, 128]
-#         self.CHECKPOINT_FILE = ""
-#         self.NUM_COORD_EMBEDDINGS = 513
-#         self.COORD_EMBEDDING_DIM = 32
+#         self.BETA_SCHEDULE = "sqrt_linear"  # ["linear", "cosine", "sqrt_linear", "sqrt"]
+#         self.BETA_START = 1e-4
+#         self.BETA_END = 2e-2
+#         self.DIFFUSION_STEPS = 100
+#         self.LEARN_LOGVAR = False
+#         self.PARAMETERISATION = "eps"  # ["eps", "x0"]
+#         self.LOG_EVERY_t = 10
+#         self.USE_EMBEDDING = True
+#         self.CLASSIFIER_SCALE = 1
+#         self.CLASSIFIER_CHECKPOINT_FILE = ""
+#         self.COORDINATE_LOSS_WEIGHT = 0
+#         self.L_SIMPLE_WEIGHT = 1
+#         self.ORIGINAL_ELBO_WEIGHT = 0
+#         self.NLL_WEIGHT = 0
+#         self.OFFSET_LOSS_WEIGHT = 0
+#         self.BCE_WEIGHT = 0
 #
-#         self.__dict__.update(entries)
+#         self.MAX_BLUR_STD = 10
+#         self.BLUR_KERNEL_SIZE = 5
+#
+#         self.VARY_GT_W_DIFFUSION = False
+#         self.RANDOM_VALIDATION = False
+#
+#         self.MASK_RADIUS = 0
+#         self.USE_OFFSETS = False
+#         self.LOCALISED_LOSS = False
+#
+#         self.GEN_BIG_T_HEATMAP = False
+#
+#         self.ADV_SCALE_LOSSES_BY_RESOLUTION = False
+#         self.ADV_USE_UPSCALED_HEATMAP = False
+#         self.ADV_USE_NEGATIVE_LEARNING = False
+#         self.ADV_TRAIN_MULTI_OBJECTIVE = False
+#
+#         super().__init__(**entries)
 
 
 class Train(SubConfig):
@@ -244,14 +209,11 @@ class Config:
         self.DATASET = Dataset(**entries.get("DATASET", {}))
         self.DENOISE_MODEL = DenoiseModel(**entries.get("DENOISE_MODEL", {}))
         self.AUGMENTATIONS = Augmentations(**entries.get("AUGMENTATIONS", {}))
-        self.CLASSIFIER_MODEL = ClassifierModel(**entries.get("CLASSIFIER_MODEL", {}))
-        # self.IMAGE_ENCODER = ImageEncoder(**entries.get("IMAGE_ENCODER", {}))
         self.TRAIN = Train(**entries.get("TRAIN", {}))
-        self.DIFFUSION = Diffusion(**entries.get("DIFFUSION", {}))
         self.PATH = ""
 
     def __str__(self):
-        sections = ["DATASET", "TRAIN", "DIFFUSION", "DENOISE_MODEL", "AUGMENTATIONS", "CLASSIFIER_MODEL"]
+        sections = ["DATASET", "TRAIN", "DENOISE_MODEL", "AUGMENTATIONS"]
         output = ""
         for section in sections:
             output += f"{section}\n"
@@ -262,7 +224,7 @@ class Config:
 
     def to_dict(self):
         return {section: getattr(self, section).__dict__ for section in
-                ["DATASET", "TRAIN", "DIFFUSION", "DENOISE_MODEL", "AUGMENTATIONS", "CLASSIFIER_MODEL"]}
+                ["DATASET", "TRAIN", "DENOISE_MODEL", "AUGMENTATIONS"]}
 
     def __copy__(self):
         return Config(**self.to_dict())

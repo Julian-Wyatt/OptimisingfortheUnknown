@@ -13,7 +13,6 @@ from core import config
 from core.config import Config
 from dataset_utils.dataset_preprocessing_utils import get_coordinates_from_heatmap
 from dataset_utils.visualisations import plot_heatmaps_and_landmarks_over_img
-from models.multi_scale_unet_new import two_d_softmax
 from trainers.CHH_reimplementation import CHH
 
 from utils.metrics import success_detection_rates, euclidean_distance
@@ -30,12 +29,8 @@ class LandmarkEnsembleDetector(L.LightningModule):
         self.cfg = cfg
 
         if cfg.TRAIN.MODEL_TYPE.lower() == "main":
-            if cfg.DATASET.USE_ALL_RCNN_IMAGES:
-                from trainers.multi_image_landmark_detection import MultiImageLandmarkDetector
-                baseModel = MultiImageLandmarkDetector
-            else:
-                from trainers.detector import RandomLandmarkDetector
-                baseModel = RandomLandmarkDetector
+            from trainers.detector import RandomLandmarkDetector
+            baseModel = RandomLandmarkDetector
         elif cfg.TRAIN.MODEL_TYPE.lower() == "chh":
             baseModel = CHH
         else:

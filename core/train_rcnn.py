@@ -60,9 +60,7 @@ def main(args):
     logger.experiment.save("./mask_rcnn_localisation.py", policy="now")
     logger.experiment.save("./train.py", policy="now")
     logger.experiment.save("./util.py", policy="now")
-    logger.experiment.save("./denoising_unet.py", policy="now")
-    logger.experiment.save("./multi_scale_unet.py", policy="now")
-    logger.experiment.save("./multi_scale_unet_new.py", policy="now")
+    logger.experiment.save("./unet_utils.py", policy="now")
 
     train_dataloader = LandmarkDatasetBoundingBoxes.get_loaders(
         cfg, batch_size=cfg.TRAIN.BATCH_SIZE, num_workers=cfg.TRAIN.NUM_WORKERS,

@@ -6,8 +6,6 @@ import torch
 from torch import nn
 
 from dataset_utils.dataset_preprocessing_utils import get_coordinates_from_heatmap, renormalise
-from dataset_utils.generate_landmark_images import create_radial_mask_batch, make_multi_scale_landmark_image_final_only, \
-    generate_offset_maps
 from dataset_utils.visualisations import plot_heatmaps, plot_heatmaps_and_landmarks_over_img, plot_landmarks_from_img
 from models.convnextv2 import ConvNeXtUNet
 from trainers.LandmarkDetection import LandmarkDetection
@@ -16,8 +14,7 @@ from utils.ema import LitEma
 from utils.metrics import euclidean_distance
 from torchinfo import summary
 
-from models.multi_scale_unet import MultiScaleUNetModel
-from models.multi_scale_unet_new import MultiScaleUNetModel as MultiScaleUNetModelNEW, two_d_softmax
+from models.unet_utils import two_d_softmax
 
 from torchvision.transforms import Resize
 
@@ -55,106 +52,6 @@ class RandomLandmarkDetector(LandmarkDetection):
                         input_size=[(1, 1, *self.image_size)],
                         dtypes=[torch.float32], device="cpu", depth=5)
 
-        elif self.cfg.DENOISE_MODEL.USE_NEW_MODEL is True:
-            self.model = MultiScaleUNetModelNEW(
-                in_channels=cfg.DATASET.CHANNELS,
-                out_channels=cfg.DATASET.NUMBER_KEY_POINTS,
-                encoder_channels=cfg.DENOISE_MODEL.ENCODER_CHANNELS,
-                decoder_channels=cfg.DENOISE_MODEL.DECODER_CHANNELS,
-                # num_blocks=cfg.DENOISE_MODEL.NUM_RES_BLOCKS,
-                conv_next_channel_mult=self.cfg.DENOISE_MODEL.CONVNEXT_CH_MULT,
-                dropout=cfg.DENOISE_MODEL.DROPOUT,
-                use_checkpoint=False,
-                use_lap_pyramid=cfg.DENOISE_MODEL.USE_LAP_PYRAMID,
-                use_upscaled_heatmap=self.cfg.DIFFUSION.ADV_USE_UPSCALED_HEATMAP,
-                blocks_per_level=self.cfg.DENOISE_MODEL.BLOCKS_PER_LEVEL,
-                train_multi_objective=self.cfg.DIFFUSION.ADV_TRAIN_MULTI_OBJECTIVE,
-                segformer_decoder_ch_mult=self.cfg.DENOISE_MODEL.SEGFORMER_DECODER_CH_MULT,
-                # multi_scale_combine_channels=64
-            )
-            # x, timesteps = None, img = None, context = None, y = None,
-            if show_summary:
-                summary(self.model,
-                        input_size=[(1, 1, *self.image_size)],
-                        dtypes=[torch.float32], device="cpu", depth=5)
-        elif self.cfg.DENOISE_MODEL.USE_NEW_MODEL == "UNet++":
-            self.model = segmentation_models_pytorch.UnetPlusPlus(
-                encoder_name='resnet34',
-                encoder_weights='imagenet',
-                # encoder_depth=len(cfg.DENOISE_MODEL.ENCODER_CHANNELS),
-                # decoder_channels=cfg.DENOISE_MODEL.DECODER_CHANNELS,  # - 256, 128, 64,32,32
-                decoder_channels=[256, 128, 64, 64, 32],
-                in_channels=cfg.DATASET.CHANNELS,
-                classes=64,
-                # activation="identity"
-            )
-            if show_summary:
-                summary(self.model,
-                        input_size=[(1, 1, *self.image_size)],
-                        dtypes=[torch.float32], device="cpu", depth=5)
-        elif self.cfg.DENOISE_MODEL.USE_NEW_MODEL == "UNet":
-            self.model = segmentation_models_pytorch.Unet(
-                encoder_name='resnet34',
-                # encoder_weights='imagenet',
-                encoder_weights=None,
-                # encoder_depth=len(cfg.DENOISE_MODEL.ENCODER_CHANNELS),
-                # decoder_channels=cfg.DENOISE_MODEL.DECODER_CHANNELS,  # - 256, 128, 64,32,32
-                # decoder_channels=[256, 128, 64, 64, 64],
-                decoder_channels=[256, 256, 256, 128, 64],
-                # decoder_channels=[512, 384, 256, 128, 64],
-                in_channels=cfg.DATASET.CHANNELS,
-                classes=cfg.DATASET.NUMBER_KEY_POINTS,
-                # activation="identity"
-            )
-
-            def swap_relu_to_swish(model):
-                for param in model.named_children():
-                    if isinstance(param[1], nn.ReLU):
-                        setattr(model, param[0], nn.SiLU())
-                    elif isinstance(param[1], nn.BatchNorm2d):
-                        setattr(model, param[0], nn.GroupNorm(num_groups=32, num_channels=param[1].num_features))
-                    else:
-                        swap_relu_to_swish(param[1])
-
-            swap_relu_to_swish(self.model)
-
-            # self.model.segmentation_head = nn.Identity()
-            if show_summary:
-                summary(self.model,
-                        input_size=[(1, 1, *self.image_size)],
-                        dtypes=[torch.float32], device="cpu", depth=5)
-        else:
-
-            self.model = MultiScaleUNetModel(
-                image_size=cfg.DATASET.IMG_SIZE,
-                in_channels=cfg.DATASET.CHANNELS,
-                use_checkpoint=False,
-                out_channels=cfg.DATASET.NUMBER_KEY_POINTS,
-                final_act=cfg.DENOISE_MODEL.FINAL_ACT,
-                dropout=cfg.DENOISE_MODEL.DROPOUT,
-                encoder_channels=cfg.DENOISE_MODEL.ENCODER_CHANNELS,
-                decoder_channels=cfg.DENOISE_MODEL.DECODER_CHANNELS,
-                num_res_blocks=cfg.DENOISE_MODEL.NUM_RES_BLOCKS,
-                context_dim=cfg.DENOISE_MODEL.CONTEXT_DIM,
-                use_spatial_transformer=cfg.CLASSIFIER_MODEL.CONTEXT_DIM is not None,
-                attention_resolutions=cfg.DENOISE_MODEL.ATTN_RESOLUTIONS,
-                use_img_as_context=False,  # input is the image
-                num_heads=cfg.DENOISE_MODEL.NUM_HEADS,
-                down_sample_context=True,
-                use_timestep_embedding=False,
-                num_classes=1,
-                cat_final=False,
-                conv_next_channel_mult=4,
-                convnext=True,
-
-            )
-            # x, timesteps = None, img = None, context = None, y = None,
-            if show_summary:
-                summary(self.model,
-                        input_size=[(1, 1, *self.image_size), [1], (1, 1, *self.image_size), (1, 1, *self.image_size),
-                                    [1]],
-                        dtypes=[torch.float32, torch.long, torch.float32, torch.float32, torch.int], device="cpu",
-                        depth=5)
 
         self.learning_rate = cfg.TRAIN.LR
 
@@ -168,10 +65,6 @@ class RandomLandmarkDetector(LandmarkDetection):
         if self.use_ema:
             self.model_ema = LitEma(self.model, decay=0.9999)
             print(f"Keeping EMAs of {len(list(self.model_ema.buffers()))}.")
-
-        self.scale_losses_by_resolution = self.cfg.DIFFUSION.ADV_SCALE_LOSSES_BY_RESOLUTION
-
-        self.use_upscaled_heatmap = self.cfg.DIFFUSION.ADV_USE_UPSCALED_HEATMAP
 
         # self.model = torch.jit.script(self.model)
 
@@ -187,139 +80,14 @@ class RandomLandmarkDetector(LandmarkDetection):
 
         nll = torch.tensor(0.0).to(self.device)
 
-        if self.cfg.DIFFUSION.ADV_TRAIN_MULTI_OBJECTIVE:
-            model_predictions = self.model.head(heatmap_prediction)
-            heatmap_prediction, mask_prediction, offset_prediction_x, offset_prediction_y = torch.chunk(
-                model_predictions, 4, dim=1)
-            if self.device.type != "mps":
-                heatmap_prediction = heatmap_prediction.double()
-            # mask_gt
-            mask_gt = create_radial_mask_batch(landmarks, img.shape[2:], batch["pixel_size"],
-                                               radius=self.cfg.DATASET.NEGATIVE_LEARNING_MAX_RADIUS, min_radius=0,
-                                               do_normalise=False)
 
-            # offset_gt = torch.zeros(
-            #     (landmarks.shape[0], landmarks.shape[1], self.image_size[0], self.image_size[1]),
-            #     device=landmarks.device,
-            #     dtype=torch.float32)
-            # for b in range(landmarks.shape[0]):
-            #     offset_gt[b] = generate_combined_offset_map(landmarks[b], self.image_size,
-            #                                                 pixel_size=batch["pixel_size"][b],
-            #                                                 radius=self.cfg.DATASET.NEGATIVE_LEARNING_MAX_RADIUS)
-
-            offset_gt_x = torch.zeros(
-                (landmarks.shape[0], landmarks.shape[1], img.shape[2], img.shape[3]),
-                device=landmarks.device,
-                dtype=torch.float32)
-            offset_gt_y = torch.zeros(
-                (landmarks.shape[0], landmarks.shape[1], img.shape[2], img.shape[3]),
-                device=landmarks.device,
-                dtype=torch.float32)
-            for b in range(landmarks.shape[0]):
-                offset_gt = generate_offset_maps(landmarks[b], img.shape[2:],
-                                                 mask=mask_gt[b])
-                offset_gt_x[b] = offset_gt[0]
-                offset_gt_y[b] = offset_gt[1]
-
-            use_mask_on_nll = False
-            heatmap_prediction_softmax = act(heatmap_prediction)
-            if use_mask_on_nll:
-                combined_nll = -target[mask_gt == 1] * torch.log(heatmap_prediction_softmax[mask_gt == 1])
-                combined_nll = torch.mean(combined_nll)
-                loss_dict.update({f'{log_prefix}/combined_nll': combined_nll.detach().item()})
-            else:
-                combined_nll = -target * torch.log(heatmap_prediction_softmax)
-                combined_nll = torch.mean(torch.sum(combined_nll, dim=(2, 3)))
-                loss_dict.update({f'{log_prefix}/combined_nll': combined_nll.detach().item()})
-                nll /= 4
-            nll += combined_nll
-
-            # mask loss
-
-            # B, N, H, W
-            # -(1-p_t)^gamma log p_t
-            # gamma = 1.5
-            # mask_prediction = torch.sigmoid(mask_prediction)
-            # p_t = mask_prediction * mask_gt + (1 - mask_prediction) * (1 - mask_gt)
-            # mask_loss = -((1 - p_t) ** gamma) * torch.log(p_t)
-            # mask_loss = torch.mean(torch.sum(mask_loss, dim=(2, 3))) / 10
-
-            # ce_loss = F.cross_entropy(input, target,reduction=self.reduction,weight=self.weight)
-            # pt = torch.exp(-ce_loss)
-            # focal_loss = ((1 - pt) ** self.gamma * ce_loss).mean()
-            # return focal_loss
-
-            # mask_loss = self.binaryLoss(mask_prediction, mask_gt)
-            # mask_loss = torch.mean(torch.sum(mask_loss, dim=(2, 3))) / 1000
-
-            # reshape mask to be B*H*W,C
-
-            distance_x = offset_prediction_x[mask_gt == 1] - offset_gt_x[mask_gt == 1]
-            distance_y = offset_prediction_y[mask_gt == 1] - offset_gt_y[mask_gt == 1]
-            distances = torch.sqrt(distance_x * distance_x + distance_y * distance_y)
-            zero_distances = torch.zeros(distance_x.shape, requires_grad=True).to(self.device)
-
-            offset_loss = self.l1Loss(distances, zero_distances)
-            offset_loss = torch.mean(offset_loss)
-
-            # reshape mask to be B*H*W,C
-            # gamma = 1.5
-            # mask_prediction_permuted = mask_prediction.clone().permute(0, 2, 3, 1).reshape(-1, target.shape[1])
-            # mask_gt_permuted = mask_gt.clone().permute(0, 2, 3, 1).reshape(-1, target.shape[1])
-            #
-            # # loss = -1 * (1-pt)**gamma * logpt
-            # logpt = torch.nn.functional.cross_entropy(mask_prediction_permuted, mask_gt_permuted, reduction='none')
-            # mask_loss = -1 * (1 - logpt.exp()) ** gamma * logpt
-            # mask_loss = mask_loss.mean()
-
-            # mask_loss = self.binaryLoss(mask_prediction, mask_gt).mean()
-            mask_prediction = torch.sigmoid(mask_prediction.double())
-            mask_prediction_sigmoid = torch.clamp(mask_prediction, min=1e-3, max=1 - 1e-3)
-
-            pos_inds = mask_gt.gt(0.9)
-            neg_inds = mask_gt.lt(0.9)
-            neg_weights = torch.pow(1 - mask_gt[neg_inds], 4)  # negative weights | 负样本权重
-
-            pos_pred = mask_prediction_sigmoid[pos_inds]
-            neg_pred = mask_prediction_sigmoid[neg_inds]
-            pos_loss = torch.log2(pos_pred) * torch.pow(1 - pos_pred, 2)  # positive loss | 正样本损失
-            neg_loss = torch.log2(1 - neg_pred) * torch.pow(neg_pred, 2) * neg_weights  # negative loss | 负样本损失
-            num_pos = pos_inds.float().sum()
-
-            pos_loss = pos_loss.sum()
-            neg_loss = neg_loss.sum()
-
-            if num_pos == 0:
-                mask_loss = -neg_loss  # if no positive samples, only consider negative loss | 如果没有正样本，只考虑负样本损失
-            else:
-                mask_loss = -(pos_loss + neg_loss) / num_pos  # average loss | 平均损失
-            mask_loss /= 5
-
-            loss_dict.update({f"{log_prefix}/mask_loss": mask_loss})
-            loss_dict.update({f"{log_prefix}/offset_loss": offset_loss})
-
-            with torch.no_grad():
-                distance_x = offset_prediction_x.detach()
-                distance_y = offset_prediction_y.detach()
-                total_distances = torch.sqrt(distance_x * distance_x + distance_y * distance_y)
-                mask_prediction_sigmoid = torch.sigmoid(mask_prediction.detach())
-                heatmap_prediction = mask_prediction.detach().clone()
-
-            nll += (mask_loss + offset_loss * 3)
-
-        # combined_heatmaps = self.model.combine_heatmaps(heatmap_predictions, target.shape[2:],
-        #                                                 scale_by_resolution=self.scale_losses_by_resolution)
-        #
-        # heatmap_prediction = Resize(target.shape[2:])(combined_heatmaps)
-        else:
-            # heatmap_prediction = self.model.head(model_output_pre_head)  # point prediction
-            if self.device.type != "mps":
-                heatmap_prediction = heatmap_prediction.double()
-            heatmap_prediction_softmax = act(heatmap_prediction)
-            combined_nll = -target * torch.log(heatmap_prediction_softmax)
-            combined_nll = torch.mean(torch.sum(combined_nll, dim=(2, 3)))
-            loss_dict.update({f'{log_prefix}/combined_nll': combined_nll.detach().item()})
-            nll += combined_nll
+        if self.device.type != "mps":
+            heatmap_prediction = heatmap_prediction.double()
+        heatmap_prediction_softmax = act(heatmap_prediction)
+        combined_nll = -target * torch.log(heatmap_prediction_softmax)
+        combined_nll = torch.mean(torch.sum(combined_nll, dim=(2, 3)))
+        loss_dict.update({f'{log_prefix}/combined_nll': combined_nll.detach().item()})
+        nll += combined_nll
 
         if torch.isnan(nll):
             print("NAN", heatmap_prediction.min(), heatmap_prediction.max(), act(heatmap_prediction).min(),
@@ -346,8 +114,6 @@ class RandomLandmarkDetector(LandmarkDetection):
             loss_dict.update({f'{log_prefix}/l2_est_scaled': l2_coordinate_estimate_scaled.item()})
         # log image
         frequency = 10
-        if self.cfg.DIFFUSION.ADV_TRAIN_MULTI_OBJECTIVE:
-            frequency //= 2
         if self.device.type == "mps":
             frequency = 1
         if self.batch_idx == 0 and self.current_epoch % frequency == 0 and self.do_img_logging or (
@@ -387,28 +153,12 @@ class RandomLandmarkDetector(LandmarkDetection):
                 except OSError as e:
                     print(e)
                 del scale_factor, img_pred_log
-                if self.cfg.DIFFUSION.ADV_TRAIN_MULTI_OBJECTIVE:
-                    img_pred_log_2 = []
-
-                    for i in [heatmap_prediction_softmax, gt, mask_prediction_sigmoid, mask_gt,
-                              total_distances, (offset_gt_x ** 2 + offset_gt_y ** 2).sqrt()]:
-                        img_pred_log_2.append(
-                            scale_heatmap_for_plotting(i)[0].clamp(0, 255).repeat(1, 3, 1, 1).cpu())
-                    img_pred_log_2 = self._get_rows_from_list(torch.stack(img_pred_log_2))
-                    try:
-                        self.logger.log_image(key=f"Media/{log_prefix}/multi_objective_predictions",
-                                              caption=["combined gt"],
-                                              images=[img_pred_log_2])
-                    except OSError as e:
-                        print(e)
 
         return loss, loss_dict, heatmap_prediction_softmax.detach()
 
     def forward(self, query_img, label=None) -> Any:
         keypoint_hat = self.model(query_img)
 
-        if self.cfg.DIFFUSION.ADV_TRAIN_MULTI_OBJECTIVE:
-            _, keypoint_hat, _, _ = torch.chunk(keypoint_hat, 4, dim=1)
 
         return two_d_softmax(keypoint_hat)
 

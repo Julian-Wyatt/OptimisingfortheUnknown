@@ -8,8 +8,7 @@ from torch.profiler import profile
 from torchinfo import summary
 
 from core import config
-from models.unet_utils import TimestepEmbedSequential, Upsample
-from models.multi_scale_unet_new import UpBlock
+from models.unet_utils import TimestepEmbedSequential, Upsample, UpBlock, GRN
 from utils.util import LayerNorm, normalisation
 
 
@@ -59,28 +58,6 @@ class IMG_MLP(nn.Module):
         return x
 
 
-class GRN(nn.Module):
-    """ GRN (Global Response Normalization) layer
-    """
-
-    def __init__(self, dim, shape=2):
-        super().__init__()
-        if shape == 2:
-            g_zero = torch.zeros(1, dim)
-            b_zero = torch.zeros(1, dim)
-        elif shape == 4:
-            g_zero = torch.zeros(1, 1, 1, dim)
-            b_zero = torch.zeros(1, 1, 1, dim)
-        else:
-            raise ValueError(f"Invalid shape: {shape}")
-        self.gamma = nn.Parameter(g_zero)
-        self.beta = nn.Parameter(b_zero)
-
-    def forward(self, x):
-        Gx = torch.norm(x, p=2, dim=(1, 2), keepdim=True)
-        Nx = Gx / (Gx.mean(dim=-1, keepdim=True) + 1e-6)
-        return self.gamma * (x * Nx) + self.beta + x
-
 
 class SegformerDecoder(nn.Module):
     def __init__(self, in_channels: list, embedding_dim_base, num_classes, dropout=0.1, embedding_dim_mult=4,
@@ -99,7 +76,6 @@ class SegformerDecoder(nn.Module):
             nn.Dropout2d(dropout)
         )
         # UpBlock
-        print(in_channels)
 
         depths = [2, 2]
         # dp_rates = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths) * 2)][::-1][sum(depths):]
@@ -109,7 +85,6 @@ class SegformerDecoder(nn.Module):
             self.up_blocks_0 = UpBlock(embedding_dim, in_channels[0], embedding_dim_base, dp_rates[:depths[0]],
                                        conv_next_channel_mult,
                                        depths[0],
-                                       "convnext", False,
                                        False, kernel_size=7)
 
             self.up_blocks = TimestepEmbedSequential(
@@ -120,16 +95,13 @@ class SegformerDecoder(nn.Module):
             self.up_blocks_0 = UpBlock(embedding_dim, in_channels[0], embedding_dim_base * 2, dp_rates[:depths[0]],
                                        conv_next_channel_mult,
                                        depths[0],
-                                       "convnext", False,
                                        False, kernel_size=7)
 
             self.up_blocks = TimestepEmbedSequential(
                 Upsample(embedding_dim_base * 2, True, dims=2, kernel_size=3, padding=1,
                          out_channels=embedding_dim_base),
                 UpBlock(embedding_dim_base, 0, embedding_dim_base, dp_rates[depths[0]:],
-                        conv_next_channel_mult, depths[1],
-                        "convnext",
-                        False, False, kernel_size=7),
+                        conv_next_channel_mult, depths[1],False, kernel_size=7),
                 Upsample(embedding_dim_base, True, dims=2, kernel_size=1, padding=0,
                          out_channels=embedding_dim_base // 2)
             )
@@ -439,7 +411,7 @@ class ConvNeXtUNet(nn.Module):
 
 if __name__ == "__main__":
     # model = ConvNeXtUNet(model_type="atto", use_pretrained=True)
-    cfg = config.get_config("configs/docker_configs/next_ensemble_tiny.yaml")
+    cfg = config.get_config("configs/next_ensemble_tiny.yaml")
     cfg.DENOISE_MODEL.NAME = "tiny"
     # cfg.DENOISE_MODEL.GRAYSCALE_TO_RGB = "repeat"
     cfg.DENOISE_MODEL.GRAYSCALE_TO_RGB = "weighted_sum"

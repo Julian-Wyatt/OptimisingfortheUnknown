@@ -85,10 +85,8 @@ COPY --chown=algorithm:algorithm trainers/mask_rcnn_localisation.py /opt/algorit
 COPY --chown=algorithm:algorithm trainers/detector.py /opt/algorithm/trainers/
 
 COPY --chown=algorithm:algorithm models/__init__.py /opt/algorithm/trainers/
-COPY --chown=algorithm:algorithm models/multi_scale_unet_new.py /opt/algorithm/models/
-COPY --chown=algorithm:algorithm models/multi_scale_unet.py /opt/algorithm/models/
 COPY --chown=algorithm:algorithm models/attention.py /opt/algorithm/models/
-COPY --chown=algorithm:algorithm models/denoising_unet.py /opt/algorithm/models/
+COPY --chown=algorithm:algorithm models/unet_utils.py /opt/algorithm/models/
 COPY --chown=algorithm:algorithm models/convnextv2.py /opt/algorithm/models/
 
 # dataset files

@@ -9,9 +9,10 @@ import torch
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
+from timm.layers import DropPath
 
 from models.attention import SpatialTransformer
-from utils.util import conv_nd, zero_module, normalisation, avg_pool_nd, get_timestep_embedding, checkpoint
+from utils.util import conv_nd, zero_module, normalisation, avg_pool_nd, checkpoint, LayerNorm
 
 
 # dummy replace
@@ -34,18 +35,6 @@ def convert_module_to_f32(param):
         if param.bias is not None:
             param.bias.data = param.bias.data.float()
 
-
-class Swish6(nn.Module):
-    """
-    Swish activation function.
-    """
-
-    def __init__(self):
-        super().__init__()
-        self.silu = nn.SiLU()
-
-    def forward(self, x):
-        return torch.clamp(self.silu(x), -6, 6)
 
 
 ## go
@@ -399,3 +388,201 @@ class QKVAttention(nn.Module):
     @staticmethod
     def count_flops(model, _x, y):
         return count_flops_attn(model, _x, y)
+
+
+class ResisdualConvBlock(nn.Module):
+    def __init__(self, channels, dropout, out_channels=None):
+        super().__init__()
+        if out_channels is None:
+            out_channels = channels
+        # self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv2d(channels, out_channels, kernel_size=3, padding=1)
+        self.norm = nn.GroupNorm(num_groups=32, num_channels=out_channels)
+        self.act = nn.GELU()
+        self.dropout = nn.Dropout2d(dropout)
+        if channels == out_channels:
+            self.skip_conv = nn.Identity()
+        else:
+            self.skip_conv = nn.Conv2d(channels, out_channels, kernel_size=1, padding=0)
+
+    def forward(self, x):
+        h = self.conv1(x)
+        h = self.norm(h)
+        h = self.act(h)
+        h = self.dropout(h)
+        return self.skip_conv(x) + h
+
+
+class ConvNeXtBlock(nn.Module):
+    """
+    https://github.com/facebookresearch/ConvNeXt-V2/blob/main/models/convnextv2.py
+    A convnext block that can optionally change the number of channels.
+    :param channels: the number of input channels.
+    :param emb_channels: the number of timestep embedding channels.
+    :param dropout: the rate of dropout.
+    :param out_channels: if specified, the number of out channels.
+    :param use_conv: if True and out_channels is specified, use a spatial
+        convolution instead of a smaller 1x1 convolution to change the
+        channels in the skip connection.
+    :param dims: determines if the signal is 1D, 2D, or 3D.
+    :param use_checkpoint: if True, use gradient checkpointing on this module.
+    :param up: if True, use this block for upsampling.
+    :param down: if True, use this block for downsampling.
+    """
+
+    def __init__(
+            self,
+            channels,
+            dropout,
+            embed_channels=None,
+            out_channels=None,
+            dims=2,
+            use_checkpoint=False,
+            channel_mult=4,
+            kernel_size=7,
+            dilation=1,
+    ):
+        super().__init__()
+        padding = kernel_size // 2
+        self.channels = channels
+        self.out_channels = out_channels or channels
+        self.use_checkpoint = use_checkpoint
+        if embed_channels is not None:
+            self.emb_layers = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(
+                    embed_channels,
+                    self.out_channels,
+                ),
+            )
+        if dilation == 2:
+            padding *= 2
+        self.in_conv = nn.Conv2d(channels, self.out_channels, kernel_size=kernel_size, padding=padding,
+                                 dilation=dilation, groups=channels)
+
+        # self.group_norm = normalisation(self.out_channels)
+        self.layer_norm = LayerNorm(self.out_channels, data_format="channels_last")
+        self.linear1 = nn.Linear(self.out_channels, self.out_channels * channel_mult)
+        self.act = nn.GELU()
+        self.GRN = GRN(self.out_channels * channel_mult)
+        self.linear2 = nn.Linear(self.out_channels * channel_mult, self.out_channels)
+        # self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Identity()
+
+        if self.out_channels == channels:
+            self.skip_connection = nn.Identity()
+        # elif use_conv:
+        #     self.skip_connection = conv_nd(
+        #         dims, channels, self.out_channels, 3, padding=1
+        #     )
+        else:
+            self.skip_connection = conv_nd(dims, channels, self.out_channels, 1)
+
+        self.drop_path = DropPath(dropout) if dropout > 0.0 else nn.Identity()
+
+    def forward(self, x, emb=None):
+        """
+        Apply the block to a Tensor, conditioned on a timestep embedding.
+        :param x: an [N x C x ...] Tensor of features.
+        :param emb: an [N x emb_channels] Tensor of timestep embeddings.
+        :return: an [N x C x ...] Tensor of outputs.
+        """
+        return checkpoint(
+            self._forward, (x, emb), self.parameters(), self.use_checkpoint
+        )
+
+    def _forward(self, x, emb=None):
+        h = self.in_conv(x)
+        if hasattr(self, 'emb_layers'):
+            emb = self.emb_layers(emb)
+            h = h + emb
+        h = h.permute(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
+        h = self.layer_norm(h)
+        h = self.linear1(h)
+        h = self.act(h)
+        h = self.GRN(h)
+        h = self.dropout(h)
+        h = self.linear2(h)
+        h = h.permute(0, 3, 1, 2)  # (N, H, W, C) -> (N, C, H, W)
+        # h = self.dropout(h)
+        return self.drop_path(self.skip_connection(x)) + h
+
+
+class UpBlock(TimestepBlock):
+    def __init__(self, in_channels, skip_channels, out_channels, dropout, conv_next_channel_mult, num_blocks=2,
+                 up_sample=True, kernel_size=7):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.dropout = dropout
+        self.conv_next_channel_mult = conv_next_channel_mult
+
+        if up_sample:
+            self.up_sample = nn.Sequential(
+                LayerNorm(self.in_channels, eps=1e-6, data_format="channels_first"),
+                Upsample(self.in_channels, True, dims=2, kernel_size=3, padding=1, out_channels=self.in_channels)
+            )
+        else:
+            self.up_sample = nn.Identity()
+
+        if in_channels != out_channels:
+            self.inner_skip_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0)
+        else:
+            self.inner_skip_conv = nn.Identity()
+
+        if skip_channels + in_channels != out_channels:
+            self.skip_conv = ResisdualConvBlock(channels=skip_channels + in_channels, dropout=max(dropout) + 0.05,
+                                                out_channels=out_channels)
+        else:
+            self.skip_conv = nn.Identity()
+        layers = []
+
+        for i in range(num_blocks):
+            layers.append(
+                ConvNeXtBlock(channels=out_channels, dropout=dropout[i],
+                              out_channels=out_channels,
+                              channel_mult=conv_next_channel_mult, kernel_size=kernel_size)
+            )
+
+        self.conv_blocks = TimestepEmbedSequential(*layers)
+
+
+    def forward(self, x, skip=None, emb=None):
+        x = self.up_sample(x)
+        inner_skip = self.inner_skip_conv(x)
+        if skip is not None:
+            x = torch.cat([x, skip], dim=1)
+        x = self.skip_conv(x)
+        x = self.conv_blocks(x, emb=emb)
+        return x + inner_skip
+
+
+def two_d_softmax(x: torch.Tensor):
+    if len(x.shape) == 3:
+        x = x.unsqueeze(1)
+    x_exp = th.exp(x)
+    x_sum = th.sum(x_exp, dim=(2, 3), keepdim=True)
+    return x_exp / x_sum
+
+
+class GRN(nn.Module):
+    """ GRN (Global Response Normalization) layer
+    """
+
+    def __init__(self, dim, shape=2):
+        super().__init__()
+        if shape == 2:
+            g_zero = torch.zeros(1, dim)
+            b_zero = torch.zeros(1, dim)
+        elif shape == 4:
+            g_zero = torch.zeros(1, 1, 1, dim)
+            b_zero = torch.zeros(1, 1, 1, dim)
+        else:
+            raise ValueError(f"Invalid shape: {shape}")
+        self.gamma = nn.Parameter(g_zero)
+        self.beta = nn.Parameter(b_zero)
+
+    def forward(self, x):
+        Gx = torch.norm(x, p=2, dim=(1, 2), keepdim=True)
+        Nx = Gx / (Gx.mean(dim=-1, keepdim=True) + 1e-6)
+        return self.gamma * (x * Nx) + self.beta + x

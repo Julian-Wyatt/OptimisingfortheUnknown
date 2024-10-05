@@ -5,8 +5,7 @@ from einops import rearrange
 
 from core import config
 from models.convnextv2 import ConvNeXtV2Block
-from models.denoising_unet import Upsample
-from models.multi_scale_unet_new import UpBlock
+from models.unet_utils import Upsample
 from trainers.LandmarkDetection import LandmarkDetection
 from trainers.detector import scale_heatmap_for_plotting
 from dataset_utils.dataset_preprocessing_utils import renormalise, get_coordinates_from_heatmap
@@ -22,7 +21,6 @@ from utils.metrics import euclidean_distance
 
 class CHH(LandmarkDetection):
 
-    # classic DDPM with Gaussian diffusion, in image space
     def __init__(self, cfg: config.Config, show_summary=True, load_external_weights=True):
         """
         TRAIN:

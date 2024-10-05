@@ -3,10 +3,7 @@ import argparse
 import os
 
 import wandb
-from trainers.CHH_reimplementation import CHH
-from trainers.detector import RandomLandmarkDetector
-from trainers.multi_image_landmark_detection import MultiImageLandmarkDetector
-from trainers.baseline import Baseline
+
 from dataset_utils.dataset import LandmarkDataset
 from trainers.test_ensemble import LandmarkEnsembleDetector
 
@@ -14,13 +11,12 @@ os.environ["WANDB__SERVICE_WAIT"] = "240"
 import torch
 
 torch.manual_seed(42)
-from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, GradientAccumulationScheduler
+from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 import lightning as L
 from utils import util
 from core import config
 
-from trainers import diffusion
 
 
 def parse_args():
@@ -94,12 +90,7 @@ def main(args):
         logger.experiment.save("./trainers/baseline.py", policy="now")
         logger.experiment.save("./models/denoising_unet.py", policy="now")
     elif cfg.TRAIN.MODEL_TYPE.lower() == "main":
-        logger.experiment.save("./models/multi_scale_unet_new.py", policy="now")
-        if cfg.DATASET.USE_ALL_RCNN_IMAGES:
-            logger.experiment.save("./trainers/multi_image_landmark_detection.py", policy="now")
-        else:
-            logger.experiment.save("./trainers/detector.py", policy="now")
-            logger.experiment.save("./models/discriminator_model.py", policy="now")
+        logger.experiment.save("./trainers/detector.py", policy="now")
     elif cfg.TRAIN.MODEL_TYPE.lower() == "chh":
         logger.experiment.save("./CHH_reimplementation.py", policy="now")
     else:

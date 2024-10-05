@@ -5,8 +5,6 @@ import os
 import wandb
 from trainers.CHH_reimplementation import CHH
 from trainers.detector import RandomLandmarkDetector
-from trainers.multi_image_landmark_detection import MultiImageLandmarkDetector
-from trainers.baseline import Baseline
 from dataset_utils.dataset import LandmarkDataset
 
 os.environ["WANDB__SERVICE_WAIT"] = "240"
@@ -19,7 +17,6 @@ import lightning as L
 from utils import util
 from core import config
 
-from trainers import diffusion
 
 
 class EarlyStoppingWithWarmup(EarlyStopping):
@@ -44,7 +41,7 @@ class EarlyStoppingWithWarmup(EarlyStopping):
 def parse_args():
     # Create an argument parser
     parser = argparse.ArgumentParser(
-        description='Train a generative model to generate landmarks conditional on an image')
+        description='Train a landmark detector via heatmap regression')
 
     parser.add_argument('--config_path', type=str, help='Path to the configuration file',
                         default="configs/default.yaml", required=False)
@@ -115,24 +112,10 @@ def main(args):
 
     logger.experiment.save("./dataset_utils/*", policy="now")
 
-    if cfg.TRAIN.MODEL_TYPE.lower() == "ddpm":
-        logger.experiment.save("./trainers/diffusion.py", policy="now")
-        logger.experiment.save("./models/denoising_unet.py", policy="now")
-        model = diffusion.DDPM(cfg)
-    elif cfg.TRAIN.MODEL_TYPE.lower() == "baseline":
-        logger.experiment.save("./trainers/baseline.py", policy="now")
-        logger.experiment.save("./models/denoising_unet.py", policy="now")
-        model = Baseline(cfg)
-    elif cfg.TRAIN.MODEL_TYPE.lower() == "main":
-        logger.experiment.save("./models/multi_scale_unet_new.py", policy="now")
+    if cfg.TRAIN.MODEL_TYPE.lower() == "main":
         logger.experiment.save("./models/convnextv2.py", policy="now")
-        if cfg.DATASET.USE_ALL_RCNN_IMAGES:
-            logger.experiment.save("./trainers/multi_image_landmark_detection.py", policy="now")
-            model = MultiImageLandmarkDetector(cfg)
-        else:
-            logger.experiment.save("./trainers/detector.py", policy="now")
-            logger.experiment.save("./models/discriminator_model.py", policy="now")
-            model = RandomLandmarkDetector(cfg)
+        logger.experiment.save("./trainers/detector.py", policy="now")
+        model = RandomLandmarkDetector(cfg)
     elif cfg.TRAIN.MODEL_TYPE.lower() == "chh":
         logger.experiment.save("./trainers/CHH_reimplementation.py", policy="now")
         model = CHH(cfg)
@@ -227,22 +210,8 @@ def main(args):
         test_dataloader = LandmarkDataset.get_loaders(
             cfg, batch_size=cfg.TRAIN.BATCH_SIZE, num_workers=cfg.TRAIN.NUM_WORKERS,
             augment_train=False, partition="testing")
-        if cfg.TRAIN.MODEL_TYPE.lower() == "ddpm":
-            model = diffusion.DDPM.load_from_checkpoint(
-                checkpoint_file,
-                cfg=cfg)
-        elif cfg.TRAIN.MODEL_TYPE.lower() == "baseline":
-
-            model = Baseline.load_from_checkpoint(
-                checkpoint_file,
-                cfg=cfg)
-        elif cfg.TRAIN.MODEL_TYPE.lower() == "main":
-            if cfg.DATASET.USE_ALL_RCNN_IMAGES:
-                model = MultiImageLandmarkDetector.load_from_checkpoint(
-                    checkpoint_file,
-                    cfg=cfg)
-            else:
-                model = RandomLandmarkDetector.load_from_checkpoint(
+        if cfg.TRAIN.MODEL_TYPE.lower() == "main":
+            model = RandomLandmarkDetector.load_from_checkpoint(
                     checkpoint_file,
                     cfg=cfg)
         elif cfg.TRAIN.MODEL_TYPE.lower() == "chh":

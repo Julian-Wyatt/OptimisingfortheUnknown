@@ -68,14 +68,6 @@ class LandmarkDatasetBoundingBoxes(Dataset):
         self.images = []
         self.metas = []
 
-        # perform augmentation
-        self.VARY_GT_W_DIFFUSION = cfg.DIFFUSION.VARY_GT_W_DIFFUSION
-        self.USE_MULTI_SCALE = cfg.DENOISE_MODEL.USE_MULTI_SCALE
-        self.num_scales = len(cfg.DENOISE_MODEL.ENCODER_CHANNELS)
-        self.USE_NEGATIVE_LEARNING = cfg.DIFFUSION.ADV_USE_NEGATIVE_LEARNING
-        self.Diffusion_T = cfg.DIFFUSION.DIFFUSION_STEPS
-        self.use_multi_annotation = cfg.DATASET.USE_MULTI_ANNOTATION
-        self.NEGATIVE_LEARNING_MAX_RADIUS = cfg.DATASET.NEGATIVE_LEARNING_MAX_RADIUS
         self.augment = augment
 
         self.IMG_SIZE = cfg.DATASET.IMG_SIZE
@@ -92,40 +84,26 @@ class LandmarkDatasetBoundingBoxes(Dataset):
                        mode="constant", shear=(-cfg.AUGMENTATIONS.SHEAR, cfg.AUGMENTATIONS.SHEAR)),
             iaa.Multiply(mul=(1 - cfg.AUGMENTATIONS.MULTIPLY, 1 + cfg.AUGMENTATIONS.MULTIPLY)),
 
-            # iaa.GammaContrast((0.5, 2)),
-            # iaa.SigmoidContrast(gain=(3, 10), cutoff=(0.4, 0.6)),
-            # iaa.WithBrightnessChannels(iaa.Add((-50, 50))),
             iaa.ElasticTransformation(alpha=(0, cfg.AUGMENTATIONS.ELASTIC_TRANSFORM_ALPHA),
                                       sigma=cfg.AUGMENTATIONS.ELASTIC_TRANSFORM_SIGMA, order=3),
             iaa.Cutout(nb_iterations=(0, cfg.AUGMENTATIONS.CUTOUT_ITERATIONS),
                        size=(cfg.AUGMENTATIONS.CUTOUT_SIZE_MIN, cfg.AUGMENTATIONS.CUTOUT_SIZE_MAX),
                        squared=False),
-            # iaa.Invert(0.25),
-            # iaa.Fliplr(0.4)
 
         ], random_order=True)
-        # self.Contrasts = [iaa.GammaContrast((0.5, 2)), iaa.LinearContrast((0.5, 1.4)),
-        #                   iaa.SigmoidContrast(gain=(3, 10), cutoff=(0.5, 0.7))]
+
 
         self.coarse_dropout = iaa.CoarseDropout(0.02, size_percent=0.08)
         self.addative_gaussian_noise = iaa.AdditiveGaussianNoise(scale=(0, cfg.AUGMENTATIONS.GAUSSIAN_NOISE * 255))
         self.coarse_dropout_rate = cfg.AUGMENTATIONS.COARSE_DROPOUT_RATE
         self.addative_gaussian_noise_rate = cfg.AUGMENTATIONS.ADDATIVE_GAUSSIAN_NOISE_RATE
 
-        self.FLIP_INITIAL_COORDINATES = cfg.AUGMENTATIONS.FLIP_INITIAL_COORDINATES
-        self.LANDMARK_POINT_EPSILON = cfg.DATASET.LANDMARK_POINT_EPSILON
-        self.LOCALISED_LOSS = cfg.DIFFUSION.LOCALISED_LOSS
-        self.USE_OFFSETS = cfg.DIFFUSION.USE_OFFSETS
-        self.RADIUS = cfg.DIFFUSION.MASK_RADIUS
 
         self.store_in_ram = True
         self.ram = {}
 
         self.normalise = normalise
 
-        # if cfg.DATASET.CACHE_DIR == "":
-        #     cfg.DATASET.CACHE_DIR = "datasets/dataset_cache"
-        # self.cache_data(cfg)
 
     def __len__(self):
         return len(self.data)
@@ -157,12 +135,7 @@ class LandmarkDatasetBoundingBoxes(Dataset):
                 box_landmark_indices.append(i)
 
         output = np.zeros((len(box_landmark_indices), 4))
-        # Percentage of landmarks in bounding box for eye: 83.33%, name ['153'], step 7920
-        # 46 Percentage of landmarks in bounding box for chin: 96.00%, name ['208'], step 7920 - add half eps and add 9 to included indices
-        # 47 Percentage of landmarks in bounding box for full: 98.11%, name ['396'], step 7920 - move
-        # 48 Percentage of landmarks in bounding box for chin: 96.00%, name ['407'], step 7920
-        # 49 Percentage of landmarks in bounding box for chin: 96.00%, name ['408'], step 7920
-        # 50 Percentage of landmarks in bounding box for chin: 96.00%, name ['424'], step 7920
+
         for i, indices in enumerate(box_landmark_indices):
             x_min, x_max, y_min, y_max = self.indices_to_target(landmarks, indices)
             if i == 1:  # ear
@@ -194,10 +167,6 @@ class LandmarkDatasetBoundingBoxes(Dataset):
                 elif self.box_eps > 40:
                     y_max += 15
                     x_max -= 20
-
-            # eye left 10
-            # chin left 10
-            # full should be enclosed by other 4 boxes (caliper out of bounds mainly)
 
             x_min = max(0, x_min - self.box_eps)
             y_min = max(0, y_min - self.box_eps)
@@ -260,10 +229,6 @@ class LandmarkDatasetBoundingBoxes(Dataset):
             landmarks_all_annotators = np.array(landmarks_all_annotators).reshape(-1, 2)
             pixels_per_mm = self.dataset_pixels_per_mm
 
-        # preprocess and augment
-        # kps = KeypointsOnImage.from_xy_array(
-        #     landmarks, shape=img.shape
-        # )
         kps = KeypointsOnImage.from_xy_array(landmarks_all_annotators, shape=img.shape)
 
         img_original = img.copy()
@@ -284,7 +249,7 @@ class LandmarkDatasetBoundingBoxes(Dataset):
                         kps_aug.keypoints]):
                     i += 1
                     if i > 3:
-                        # output which image and keypoint value i s causing the issue
+                        # output which image and keypoint value is causing the issue
                         # temp = kps_aug.to_xy_array()
                         # print("Recommend Smaller Augs")
                         # print(f"Image {image_name}")
@@ -299,8 +264,6 @@ class LandmarkDatasetBoundingBoxes(Dataset):
                 img_aug = self.coarse_dropout(image=img_aug)
             if random_2 < self.addative_gaussian_noise_rate:
                 img_aug = self.addative_gaussian_noise(image=img_aug)
-            # contr = random.randint(0, len(self.Contrasts) - 1)
-            # img_aug = self.Contrasts[random.randint(0, len(self.Contrasts) - 1)].augment_image(img_aug)
 
             img, kps = img_aug, kps_aug
 
@@ -308,11 +271,9 @@ class LandmarkDatasetBoundingBoxes(Dataset):
 
         landmarks_all_annotators = kps.to_xy_array().reshape(-1, self.total_landmarks, 2)
         landmarks = np.mean(landmarks_all_annotators, axis=0)
-        # landmarks = np.flip(landmarks, axis=-1).astype(np.float32)
 
         output = {"x": img, "y": landmarks, "name": f"{image_name.split('/')[-1].split('.')[0]}"}
         output["landmarks_all_annotators"] = landmarks_all_annotators
-        # output["x"] = output["x"].astype(np.float32) / 255
 
         output["boxes"] = BoundingBoxes(self.make_target(landmarks, img.shape),
                                         canvas_size=(img.shape[1], img.shape[0]),
@@ -346,11 +307,7 @@ def main():
     plt.rcParams["image.cmap"] = "gray"
     plt.rcParams["figure.dpi"] = 75
     cfg = config.get_config("configs/local_test_ceph_challenge.yaml")
-    # cfg = config.get_config("configs/local_test_ceph_adv.yaml")
-    # cfg = config.get_config("configs/local_test_ceph.yaml")
 
-    # cfg.DATASET.USE_MULTI_ANNOTATION = 1
-    # cfg = config.get_config("./configs/local_test_ceph.yaml")
     cfg.DATASET.IMG_SIZE = [800, 704]
     cfg.AUGMENTATIONS.ELASTIC_TRANSFORM_ALPHA = 170
     cfg.AUGMENTATIONS.ELASTIC_TRANSFORM_SIGMA = 45
@@ -362,103 +319,11 @@ def main():
     for i, batch in enumerate(train_loader):
         x = rearrange(batch["x"], 'b h w c -> b c h w').to(torch.float32)
 
-        # boxes_numpy = batch["boxes"].numpy()
-        print(batch["name"][0], x.shape, batch["name"], type(batch["name"]), batch["img_pre_padded_resolution"].dtype)
-        # print(boxes_numpy[:, :, 2] - boxes_numpy[:, :, 0], boxes_numpy[:, :, 3] - boxes_numpy[:, :, 1],
-        #       (boxes_numpy[:, :, 2] - boxes_numpy[:, :, 0]) / (boxes_numpy[:, :, 3] - boxes_numpy[:, :, 1]))
         cfg.DATASET.SAVE_ALL_RCNN_IMAGES = False
         img = plot_img_bounding_box_landmarks(x, batch["boxes"], batch["y"], convert_to_tensor=False,
                                               show_landmark_indices=True)
         plt.imshow(img)
         plt.show()
-
-        # rcnn_save_image(batch, batch["boxes"][0], batch["labels"][0], "./datasets/dataset_cache/TEST", cfg)
-
-        # def try_again(name, use_original_landmarks=False):
-        #
-        #     if use_original_landmarks:
-        #
-        #         landmarks_original = train_loader.dataset.annotations_dataframe.loc[
-        #                                  train_loader.dataset.annotations_dataframe[
-        #                                      "image file"] == f"{name}.bmp"].iloc[0,
-        #                              2:].values.astype(
-        #             'float').reshape(-1, 2)
-        #         # landmarks_original = np.array(
-        #         #     [835, 996, 1473, 1029, 1318, 1272, 623, 1238, 1342, 1639, 1373, 2029, 1333, 2200, 1313, 2244, 1266,
-        #         #      2279, 694, 1805, 1457, 1865, 1450, 1864, 1587, 1757, 1569, 2005, 1514, 1620, 1431, 2236, 934, 1538,
-        #         #      1387, 1552, 670, 1343, 1276, 2182, 1340, 1661, 1321, 2035, 1588, 1592, 938, 1412, 736, 1185, 1663,
-        #         #      1528, 498, 1440, 931, 1222, 363, 1388, 1558, 1718, 1537, 2028, 1385, 2304, 1266, 2356, 1599, 892,
-        #         #      1500, 1146, 960, 2309, 1175, 1777, 1208, 1848, 432, 1790, 499, 1798, 567, 1845, 416, 1822, 551,
-        #         #      1896, 375, 1952, 447, 1968, 529, 2023, 352, 1988, 504, 2078, 325, 2123, 398, 2137, 485, 2187, 1711,
-        #         #      953, 1712, 1044])
-        #         landmarks_original = landmarks_original.reshape(53, 2)
-        #         # plt.scatter(landmarks_original[:, 0], landmarks_original[:, 1], s=1)
-        #         landmarks = landmarks_original
-        #     else:
-        #         meta = json.load(open(f"datasets/dataset_cache/TEST/{name}_meta.json", "r"))
-        #         shift = meta["shift"]
-        #         # pre_resize_shape = meta["pre-resize shape_1"]
-        #         # img = cv2.imread(f"datasets/dataset_cache/TEST/{name}_cropped_1.png", cv2.IMREAD_GRAYSCALE)
-        #         landmarks_np = np.loadtxt(f"datasets/dataset_cache/TEST/{name}_annotations.txt", delimiter=",",
-        #                                   max_rows=54).astype(np.float64).reshape(-1, 2)
-        #
-        #         landmarks_np[:] = landmarks_np[:] * meta["scale_factor"]
-        #
-        #         landmarks_np[:, 0] += shift[0]
-        #         landmarks_np[:, 1] += shift[1]
-        #         # plt.scatter(landmarks_np[:, 0], landmarks_np[:, 1], s=1)
-        #         landmarks = landmarks_np
-        #     img_original = cv2.imread(
-        #         f"datasets/datasets-in-use/xray-cephalometric-land/2024-MICCAI-Challenge/Training Set/images/{name}.bmp",
-        #         cv2.IMREAD_GRAYSCALE)
-        #     # plt.imshow(img_original, cmap="gray")
-        #     # plt.title(f"Original: {use_original_landmarks}")
-        #     # plt.show()
-        #     return landmarks
-        #
-        # landmarks = try_again(batch["name"][0])
-        # landmarks_gt = try_again(batch["name"][0], use_original_landmarks=True)
-        #
-        # # output error
-        # print(np.mean(landmarks_gt - landmarks, axis=0))
-
-        # if i >= 2:
-        #     break
-
-        # indices = [None, [0, 3, 16, 18, 23, 24, 26, 27, 28],
-        #            [9, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
-        #            [4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 25, 29, 30, 31, 32, 35, 36,
-        #             37],
-        #            [1, 2, 33, 34, 51, 52]]
-        #
-        # def calculate_percentage_of_landmarks_in_bounding_box(bounding_boxes, landmarks, labels):
-        # def calculate_percentage_of_landmarks_in_bounding_box(bounding_boxes, landmarks, labels):
-        #     percentages = []
-        #     for idx, box in enumerate(bounding_boxes):
-        #         count = 0
-        #         if indices[labels[idx]] is None:
-        #             selected_landmarks = landmarks
-        #         else:
-        #             selected_landmarks = landmarks[indices[labels[idx]]]
-        #         for landmark in selected_landmarks:
-        #             if box[0] <= landmark[0] <= box[2] and box[1] <= landmark[1] <= box[3]:
-        #                 count += 1
-        #         percentages.append(count / len(selected_landmarks))
-        #     return percentages
-        #
-        # print(calculate_percentage_of_landmarks_in_bounding_box(batch["boxes"][0], batch["y"][0], batch["labels"][0]))
-        #
-        # output = plot_img_bounding_box_landmarks(x, batch["boxes"], batch["y"], convert_to_tensor=False,
-        #                                          show_landmark_indices=True)
-        # plt.title(f"Image {batch['name'][0]}")
-        # plt.imshow(output)
-
-        # boxed_landmarks = torch.round(batch["y"]).to(torch.int)
-        # plt.scatter(boxed_landmarks[0, :, 0], boxed_landmarks[0, :, 1], c='r', s=2)
-        # for landmark_i, (coordinate_x, coordinate_y) in enumerate(boxed_landmarks[0]):
-        #     plt.text(coordinate_x, coordinate_y, str(landmark_i), color='red', fontsize=8)
-        # plt.title(f"Image {batch['name'][0]}")
-        # plt.show()
 
         if i > 5:
             break
@@ -466,8 +331,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # get_mean_std()
     main()
-    # mnist_loader(4, 1)
-    # check_file()
-    # check_partitions()

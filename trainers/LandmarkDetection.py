@@ -161,7 +161,6 @@ class LandmarkDetection(L.LightningModule):
         # img_log returns dict with {"heatmaps": torch.Tensor, "video": list of torch.Tensor,
         #                            "heatmaps_figure": plt.Figure, "final": plt.Figure}
         log = metrics.evaluate_landmark_detection(img_log["heatmaps"], batch["y"],
-                                                  ddh_metrics=self.cfg.DATASET.LOG_DDH_METRICS,
                                                   pixel_sizes=torch.Tensor([[1, 1]]).to(
                                                       img_log["heatmaps"].device),
                                                   top_k=self.cfg.TRAIN.TOP_K_HOTTEST_POINTS)
@@ -170,7 +169,6 @@ class LandmarkDetection(L.LightningModule):
             for annotator in range(batch["landmarks_per_annotator"].shape[1]):
                 annotations = batch["landmarks_per_annotator"][:, annotator, :, :]
                 log_annotator = metrics.evaluate_landmark_detection(img_log["heatmaps"], annotations,
-                                                                    ddh_metrics=False,
                                                                     pixel_sizes=batch["pixel_size"],
                                                                     top_k=self.cfg.TRAIN.TOP_K_HOTTEST_POINTS)
                 self.log(f"val/l2_annotator_{annotator}", np.mean(log_annotator["l2"]), prog_bar=False,
@@ -189,7 +187,6 @@ class LandmarkDetection(L.LightningModule):
 
         if torch.mean(batch["pixel_size"]) != 1:
             log_scaled = metrics.evaluate_landmark_detection(img_log["heatmaps"], batch["y"],
-                                                             ddh_metrics=self.cfg.DATASET.LOG_DDH_METRICS,
                                                              pixel_sizes=batch["pixel_size"],
                                                              top_k=self.cfg.TRAIN.TOP_K_HOTTEST_POINTS)
             self.log("val/l2_scaled", np.mean(log_scaled["l2"]), prog_bar=False, logger=True, on_step=False,
@@ -201,13 +198,6 @@ class LandmarkDetection(L.LightningModule):
         self.log("val/l2", np.mean(log["l2"]), prog_bar=False, logger=True, on_step=False, on_epoch=True)
         self.log("val/l1", np.mean(log["l1"]), prog_bar=False, logger=True, on_step=False, on_epoch=True)
         self.log("val/ere", np.mean(log["ere"]), prog_bar=False, logger=True, on_step=False, on_epoch=True)
-        if self.cfg.DATASET.LOG_DDH_METRICS:
-            self.log("val/line_distance", np.mean(log["line_dist"]), prog_bar=False, logger=True, on_step=False,
-                     on_epoch=True)
-            self.log("val/angle_distance_degrees", np.mean(log["angle_dist"]), prog_bar=False,
-                     logger=True, on_step=False,
-                     on_epoch=True)
-            sweep_minimiser += np.mean(log["line_dist"]) + np.mean(log["angle_dist"])
         self.log("val/sweep_minimiser", sweep_minimiser, prog_bar=False, logger=True, on_step=False,
                  on_epoch=True)
         if self.do_video_logging and "video" in img_log:
@@ -275,12 +265,10 @@ class LandmarkDetection(L.LightningModule):
         if self.cfg.TRAIN.LOG_TEST_METRICS:
 
             log = metrics.evaluate_landmark_detection(img_log["heatmaps"], batch["y"],
-                                                      ddh_metrics=self.cfg.DATASET.LOG_DDH_METRICS,
                                                       pixel_sizes=torch.Tensor([[1, 1]]).to(
                                                           img_log["heatmaps"].device),
                                                       top_k=self.cfg.TRAIN.TOP_K_HOTTEST_POINTS)
             log_scaled = metrics.evaluate_landmark_detection(img_log["heatmaps"], batch["y"],
-                                                             ddh_metrics=self.cfg.DATASET.LOG_DDH_METRICS,
                                                              pixel_sizes=batch["pixel_size"],
                                                              top_k=self.cfg.TRAIN.TOP_K_HOTTEST_POINTS)
 
@@ -289,7 +277,6 @@ class LandmarkDetection(L.LightningModule):
                 for annotator in range(batch["landmarks_per_annotator"].shape[1]):
                     annotations = batch["landmarks_per_annotator"][:, annotator, :, :]
                     log_annotator = metrics.evaluate_landmark_detection(img_log["heatmaps"], annotations,
-                                                                        ddh_metrics=False,
                                                                         pixel_sizes=batch["pixel_size"],
                                                                         top_k=self.cfg.TRAIN.TOP_K_HOTTEST_POINTS)
                     self.log(f"test/l2_annotator_{annotator}", np.mean(log_annotator["l2"]), prog_bar=False,
@@ -320,9 +307,6 @@ class LandmarkDetection(L.LightningModule):
                 with open(f"{self.cfg.TRAIN.SAVING_ROOT_DIR}/tmp/{self.logger.experiment.id}/test_results.csv",
                           "a") as f:
                     output = [batch['name'][i], *[str(x) for x in log["l2"][i]], str(np.mean(log['l2'][i]))]
-                    if self.cfg.DATASET.LOG_DDH_METRICS:
-                        output += [str(np.mean(log["line_dist"][i]))]
-                        output += [str(np.mean(log["angle_dist"][i]))]
 
                     f.write(",".join(output) + "\n")
 
@@ -390,7 +374,7 @@ class LandmarkDetection(L.LightningModule):
 
     def on_test_epoch_end(self) -> None:
         # output to csv with format
-        # image name, landmark0,...,n average l2, if ddh metrics then angle and line distance
+        # image name, landmark0,...,n average l2,
         # columns: image name, landmark0, landmark1, landmark2, landmark3, landmark4, average l2, average angle, average line distance
 
         if not self.cfg.TRAIN.LOG_TEST_METRICS:
@@ -423,9 +407,7 @@ class LandmarkDetection(L.LightningModule):
                     f"{prefix} test {error_name} sdr stats for {unit} sizes {pixel_sizes} {[f'{sdr:.3f}' for sdr in sdr_stats]}")
 
         error_metrics = ['l2', "l2_scaled", 'l1', 'ere']
-        if self.cfg.DIFFUSION.GEN_BIG_T_HEATMAP:
-            error_metrics.append("l2_x0")
-            error_metrics.append("ere_x0")
+
         if self.total_annotators > 1:
             for i in range(self.total_annotators):
                 error_metrics.append(f"l2_scaled_annotator_{i}")
@@ -471,20 +453,6 @@ class LandmarkDetection(L.LightningModule):
 
         print("Overall mean errors")
 
-        if self.cfg.DATASET.LOG_DDH_METRICS:
-            error_metrics.extend(['line_dist', "line_dist_x0", 'angle_dist', "angle_dist_x0"])
-            errors_dict["line_dist"] = np.concatenate(self.test_coordinates_errors["line_dist"]).reshape(-1, 4)
-
-            errors_dict["angle_dist"] = np.concatenate(self.test_coordinates_errors["angle_dist"]).reshape(-1, 2)
-
-            if self.cfg.DIFFUSION.GEN_BIG_T_HEATMAP:
-                errors_dict["line_dist_x0"] = np.concatenate(self.test_coordinates_errors["line_dist_x0"]).reshape(
-                    -1,
-                    4)
-                errors_dict["angle_dist_x0"] = np.concatenate(
-                    self.test_coordinates_errors["angle_dist_x0"]).reshape(-1,
-                                                                           2)
-
         for error in error_metrics:
             print_error_stats(error, errors_dict[error], "scaled" in error or "x0" in error)
 
@@ -501,13 +469,6 @@ class LandmarkDetection(L.LightningModule):
         sdr_stats = metrics.success_detection_rates(errors_dict["l2_scaled"].flatten(), [2.0, 2.5, 3.0, 4.0])
         for i, dist in enumerate([2, 2.5, 3, 4]):
             self.log(f"test/sdr/{dist}", sdr_stats[i])
-
-        print("-----------------------------------")
-
-        if self.cfg.DATASET.LOG_DDH_METRICS:
-            print_sdr_stats("line_dist", errors_dict["line_dist"])
-            if self.cfg.DIFFUSION.GEN_BIG_T_HEATMAP:
-                print_sdr_stats("line_dist_x0", errors_dict["line_dist_x0"])
 
         print("-----------------------------------")
 
