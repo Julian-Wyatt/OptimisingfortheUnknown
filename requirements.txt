@@ -72,7 +72,7 @@ scikit-image
 scikit-learn
 scipy
 segmentation-models-pytorch
-sentry-sdk==1.40.2
+sentry-sdk
 setproctitle==1.3.3
 setuptools
 shapely==2.0.2
