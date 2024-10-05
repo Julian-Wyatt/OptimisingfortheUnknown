@@ -455,7 +455,8 @@ class LandmarkDataset(Dataset):
             shuffle = partition == "training"
         dataset = cls(root_dir, partition=partition, augment=augment_train and partition == "training")
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle,
-                                num_workers=num_workers)
+                                num_workers=num_workers,
+                                persistent_workers=True)
 
         return dataloader
 
